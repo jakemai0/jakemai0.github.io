@@ -1,0 +1,74 @@
+baseurl      = "https://jakemai0.github.io/"
+title        = "My Cybersecurity Ramblings"
+languageCode = "en-us"
+theme        = "hello-friend-ng"
+paginate     = 10
+
+[params]
+  dateform        = "Jan 2, 2006"
+  dateformShort   = "Jan 2"
+  dateformNum     = "2006-01-02"
+  dateformNumTime = "2006-01-02 15:04"
+
+  # Subtitle for home
+  homeSubtitle = "Cybersecurity Enthusiast || Penetration Tester || Aspiring Red Teamer"
+
+  enableThemeToggle = true
+  defaultTheme = "dark"
+
+  # Set disableReadOtherPosts to true in order to hide the links to other posts.
+  disableReadOtherPosts = false
+
+  # Enable sharing buttons, if you like
+  enableSharingButtons = true
+
+  # Metadata mostly used in document's head
+  description = "Welcome to my digital domain :)"
+  keywords = "homepage, blog"
+  images = [""]
+
+[[params.social]]
+    name = "linkedin"
+    url  = "https://www.linkedin.com/in/jakemai0/"
+
+[[params.social]]
+    name = "github"
+    url  = "https://www.github.com/jakemai0/"
+
+[params.footer]
+	bottomText = [
+		"Powered by <a href=\"http://gohugo.io\">Hugo</a> theme <a href=\"https://themes.gohugo.io/themes/hugo-theme-hello-friend-ng/\">hello-friend-ng</a>"
+	]
+	
+
+[taxonomies]
+    category = "blog"
+    tag      = "tags"
+    series   = "series"
+
+[languages]
+  [languages.en]
+    title = "Jake Mai"
+    subtitle = "A simple theme for Hugo"
+    keywords = ""
+    copyright = '<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>'
+    readOtherPosts = "Read other posts"
+
+    [languages.en.params.logo]
+      logoText = "$ cd ~/"
+      logoHomeLink = "/"
+    # or
+    #
+    # path = "/img/your-example-logo.svg"
+    # alt = "Your example logo alt text"
+
+  # And you can even create generic menu
+  [[menu.main]]
+    identifier = "posts"
+    name       = ">$ cd ~/posts"
+    url        = "posts/"
+
+  [[menu.main]]
+    identifier = "about"
+    name       = ">$ whoami"
+    url        = "about/"
