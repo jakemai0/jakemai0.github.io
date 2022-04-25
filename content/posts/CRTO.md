@@ -12,6 +12,7 @@ tags:
   - RedTeam
   - CobaltStrike
   - Certifications
+  - CRTO
 ---
 ## Introduction
 [Red Team Ops](https://courses.zeropointsecurity.co.uk/courses/red-team-ops) is a course offered by Zero Point Security, serves as an Introduction to Red Teaming with a focus on the use of Cobalt Strike C2. When the students finish the course and pass the 48 hour exam (don't worry, it's not like the 300 level courses by OffSec), the students will receive the "Certified Red Team Operator" certification.
