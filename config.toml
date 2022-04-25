@@ -37,7 +37,7 @@ paginate     = 10
 
 [params.footer]
 	bottomText = [
-		"Powered by <a href=\"http://gohugo.io\">Hugo</a> theme <a href=\"https://themes.gohugo.io/themes/hugo-theme-hello-friend-ng/\">hello-friend-ng</a>"
+		"Powered by <a href=\"http://gohugo.io\">Hugo</a>"
 	]
 	
 
