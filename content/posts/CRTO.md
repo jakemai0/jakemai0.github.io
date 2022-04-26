@@ -67,7 +67,7 @@ Oh well, I had 26 hours left, so I reverted everything and started from square o
 {{< image src="/images/exam.png" alt="Exam Timeline" position="center" style="border-radius: 8px;" >}}
 *My exam timeline*
 {{< image src="/images/cert.png" alt="Exam Timeline" position="center" style="border-radius: 8px;" >}}
-*Another one to the collection*
+<div align="center">*Another one to the collection*</div>
 
 ## Final Thoughts
 For me, RTO was the best course I've ever taken so far, material was top notch, great lab experience, and I actually enjoyed doing the course. Can't wait for RTO2 :)
