@@ -4,6 +4,9 @@ languageCode = "en-us"
 theme        = "hello-friend-ng"
 paginate     = 10
 
+enableEmoji 	= true
+enableGitInfo 	= true
+
 [params]
   dateform        = "Jan 2, 2006"
   dateformShort   = "Jan 2"
