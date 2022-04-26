@@ -66,8 +66,8 @@ My first day did not go so well, I got 2 flags in the first 4 hours, and got stu
 Oh well, I had 26 hours left, so I reverted everything and started from square one. Took me a while to get to the point I was before, and yes, I finally got flag 6 at 2am. Had a bit too much coffee by then so I tried grinding out the next 2 flags, and managed to get 8/8 at 4.30am after 20 hours straight :').
 {{< image src="/images/exam.png" alt="Exam Timeline" position="center" style="border-radius: 8px;" >}}
 *My exam timeline*
-{{< image src="/images/cert.png" alt="Exam Timeline" position="center" style="border-radius: 8px;" >}}
-<div align="center">*Another one to the collection*</div>
+{{< image src="/images/cert.png" alt="Exam Timeline" position="left" style="border-radius: 8px;" >}}
+*Another one to the collection*
 
 ## Final Thoughts
 For me, RTO was the best course I've ever taken so far, material was top notch, great lab experience, and I actually enjoyed doing the course. Can't wait for RTO2 :)
