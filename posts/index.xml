@@ -72,9 +72,9 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 <h2 id="introduction">Introduction</h2>
 <p>In a recent network pentest, I found an ADCS CA (Active Directory Certificate Services Certificate Authortity) on the target domain. I haven&rsquo;t gotten a chance to play around with ADCS before, but I did remember reading about one attack technique called <a href="https://github.com/topotam/PetitPotam">PetitPotam</a> that abuses NTLM Relay via ADCS to take over the domain. After some time reading up about the technique and getting my hands dirty, I have successfully compromised DA! This blog post will be a quick rundown of how I got DA using this attack.</p>
 <h3 id="active-directory-certificate-services">Active Directory Certificate Services</h3>
-<p>On a high level, ADCS is a server role in Windows Active Directory that allows users to build a Public Key Infrastructure (PKI). This means that it can provide digital certificates and digital signature capabilities, improving confidentiality via encryption and integrity via digital signatures. The practical applications of ADCS are VPN (Virtual Private Network), IPSec (Internet Protocol Security), EFS (Encrypting File System), Smart Card logon, and more.</p>
+<p>At a high level, ADCS is a server role in Windows Active Directory that allows users to build a Public Key Infrastructure (PKI). This means that it can provide digital certificates and digital signature capabilities, improving confidentiality via encryption and integrity via digital signatures. The practical applications of ADCS are SSL/TLS, VPN (Virtual Private Network), IPSec (Internet Protocol Security), EFS (Encrypting File System), Smart Card logon, and more.</p>
 <h3 id="petitpotam">PetitPotam</h3>
-<p>PetitPotam is an attack technique that abuses NTLM Relay via ADCS CA with Web Enrollment enabled by exploiting the MS-EFSRPC (Encrypting File System Remote Protocol). This technique allows an attacker in the internal network to force the Domain Controller (DC) machine account to authenticate towards a machine with NTLM relay configured (the attacker machine). This authentication will then be relayed to the CA Web Enrollment to request for a certificate as the DC. This certificate can be captured and be used to request for a TGT as the DC machine account. With this TGT, Mimikatz can be used to dump credentials of the DA or the krbtgt account to fully compromise the Active Directory environment.</p>
+<p>PetitPotam is an attack technique that abuses NTLM Relay via ADCS CA with Web Enrollment enabled by exploiting the MS-EFSRPC (Encrypting File System Remote Protocol). This technique allows an <strong>unauthenticated</strong> attacker in the internal network to force the Domain Controller (DC) machine account to authenticate towards a machine with NTLM relay configured (the attacker machine). This authentication will then be relayed to the CA Web Enrollment to request for a certificate as the DC. This certificate can be captured and be used to request for a TGT as the DC machine account. With this TGT, Mimikatz can be used to dump credentials of the DA or the krbtgt account to fully compromise the Active Directory environment.</p>
 <h2 id="action">Action</h2>
 <p>From the foothold domain machine, I did some enumeration and was able to locate a CA in the domain. A native Windows tool called <code>certutil.exe</code> or <a href="https://github.com/GhostPack/Certify">Certify</a> can be used for this purpose. Certify is a C# tool to enumerate and abuse misconfigurations in ADCS, this tool can also be used to look for vulnerable certificate templates. Misconfiguration in certificate templates can lead to privilege escaltion, unfortunately, no vulnerable template was identified.
 
@@ -82,18 +82,7 @@ Original research was done by <a href="https://twitter.com/harmj0y">Will Schroed
 
 
 <em>Identified CA</em></p>
-<p>Now I&rsquo;ve got the domain name for the CA Web Enrollment Interface at <code>https://ca-hostname/certsrv</code>, I was able to access this domain and request for a certificate to get a <code>certfnsh.asp</code>.
-
-    <img src="/images/CA_WebE.png"  alt="CA Web Enrollment"  class="left"  style="border-radius: 8px;"  />
-
-
-<em>CA Web Enrollment Portal</em>
-
-    <img src="/images/certfnsh.png"  alt="certfnsh.asp"  class="left"  style="border-radius: 8px;"  />
-
-
-<em>Generated certfnsh.asp</em></p>
-<p>With this, I was able to launch the ADCS Relay attack.</p>
+<p>With this, I was able to launch the ADCS Relay attack. The idea is to corece the DC to connect to the attacker machine, then relay the credential of the DC machine account to the ADCS server and request for a certificate (on behalf on the DC$). With this certificate, we can request for a TGT as the DC, and proceed to pwn the whole environment.</p>
 <p>From the attacker box, launch <code>ntlmrelayx.py</code>:</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ntlmrelayx.py -debug -smb2support --target https://ca-hostname/certsrv/certfnsh.asp --adcs --template domaincontroller
 </span></span></code></pre></div><p>The <code>--template</code> argument would depend on the account that would be relayed. Since I was relaying a DC, then the template should be <code>domaincontroller</code>, you could enumerate the template on the ADCS using Certify: <code>Certify.exe cas</code></p>
