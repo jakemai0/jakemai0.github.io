@@ -24,7 +24,7 @@ I still need to conduct more research and experiment to fully understand this at
 
 
 ## Introduction
-In a recent network pentest, I found an ADCS CA (Active Directory Certificate Services Certificate Authortity) on the target domain. I haven't gotten a chance to play around with ADCS before, but I did remembered reading about one attack technique called [PetitPotam](https://github.com/topotam/PetitPotam) that abuses NTLM Relay via ADCS to take over the domain. After some time reading up about the technique and getting my hands dirty, I have successfully compromised DA! This blog post will be a quick rundown of how I got DA using this attack.
+In a recent network pentest, I found an ADCS CA (Active Directory Certificate Services Certificate Authortity) on the target domain. I haven't gotten a chance to play around with ADCS before, but I did remember reading about one attack technique called [PetitPotam](https://github.com/topotam/PetitPotam) that abuses NTLM Relay via ADCS to take over the domain. After some time reading up about the technique and getting my hands dirty, I have successfully compromised DA! This blog post will be a quick rundown of how I got DA using this attack.
 
 ### Active Directory Certificate Services
 On a high level, ADCS is a server role in Windows Active Directory that allows users to build a Public Key Infrastructure (PKI). This means that it can provide digital certificates and digital signature capabilities, improving confidentiality via encryption and integrity via digital signatures. The practical applications of ADCS are VPN (Virtual Private Network), IPSec (Internet Protocol Security), EFS (Encrypting File System), Smart Card logon, and more.
