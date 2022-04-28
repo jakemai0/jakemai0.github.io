@@ -26,7 +26,7 @@ enableEmoji 	= true
 
   # Metadata mostly used in document's head
   description = "Welcome to my digital domain :)"
-  keywords = "homepage, blog"
+  keywords = "jake mai, jakemai, security, hacking"
   images = ["/preview.png"]
 
 [[params.social]]
