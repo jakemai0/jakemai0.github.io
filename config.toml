@@ -13,7 +13,7 @@ enableEmoji 	= true
   dateformNumTime = "2006-01-02 15:04"
 
   # Subtitle for home
-  homeSubtitle = "Cybersecurity Enthusiast || Penetration Tester || Aspiring Red Teamer"
+  homeSubtitle = "Cybersecurity Professional || Penetration Tester || Aspiring Red Teamer"
 
   enableThemeToggle = true
   defaultTheme = "dark"
