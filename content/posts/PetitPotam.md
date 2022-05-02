@@ -20,7 +20,6 @@ Original research was done by [Will Schroeder](https://twitter.com/harmj0y) and 
 
 [PetitPotam](https://github.com/topotam/PetitPotam) PoC was written by [Lionel Gilles](https://twitter.com/topotam77).
 
-I still need to conduct more research and experiment to fully understand this attack and the underlying technicalities.
 
 
 ## Introduction
