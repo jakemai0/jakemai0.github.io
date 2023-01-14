@@ -1,4 +1,4 @@
 Hello world!  
 \
-My name is Jake, I am a penetration tester/cyber security enthusiast in New Zealand.
-With this blog, I hope to share with the community my infosec journey experience, new skills and technique that I've learned along the way. 
+My name is Jake, I am a cyber security professional based in New Zealand, my main interests are in Red Teaming and Threat Hunting.
+With this blog, I hope to share with the community my infosec journey experience, new skills and techniques that I've learned along the way.
