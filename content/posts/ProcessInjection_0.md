@@ -19,6 +19,7 @@ In this blog post, I will be talking about writing your own injector in C#. Part
 I won't be drilling deep into each and everything mentioned, but some basic knowledge in programming, Windows internals and Windows API should help you understand the content much better.
 
 ## P/Invoke
+Before talking about D/Invoke, let's briefly talk about P/Invoke.
 On a high level, [P/Invoke](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke) - Platform Invoke is a .NET mechanism, or technology that allows .NET applications to make calls and access the Windows APIs (via the `System` and `System.Runtime.InteropServices` namespaces). Combine with the ability to load and execute .NET assemblies (exe, dll) from memory thanks to the magic of Reflection, this is great for Red Teamers/TAs to carry out post-exploitation tradecrafts without touching the disk. Here is an example of P/Invoke usage to call the `OpenProcess` Win32API:
 
 ```csharp
@@ -33,11 +34,11 @@ IntPtr hProcess = OpenProcess(0x001F0FFF, false, Process.GetProcessesByName("exp
 ```
 
 Okay neat, we can import and call any API we want, so what's the downside?
-1. Any API import via P/Invoke is a static reference and will be visible in the assembly's Import Address Table (IAT). This is bad OPSEC since the IAT entries will be populated at run time, with all the references to the APIs we're about to call. Suspicious API calls considered by AV/EDR to be usual suspects such as: `VirtualAlloc`, `VirtualAllocEx`, `MoveMemory`, `WriteProcessMemory`, `CreateRemoteThread` will be caught immediately. It's like going through airport security with bag full of explosives, you want to get caught at this point.
-2. API hooking (specific API calls monitored by AV/EDR) also busts suspicious API calls, we would need to avoid the usage of the more "obvious" APIs. D/Invoke provides Manual Mapping as a solution to bypass API hooking, but it won't be covered in this post.
+1. Any API import via P/Invoke is a static reference and will be visible in the . NET assembly's Import Address Table (IAT). This is bad OPSEC since the IAT entries will be populated at run time, with all the references to the APIs we're about to call. Suspicious API calls considered by AV/EDR to be usual suspects such as `VirtualAlloc`, `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread` will be caught immediately. It's like going through airport security with bag full of explosives, you want to get caught at this point.
+2. API hooking (specific API calls monitored by AV/EDR) also busts suspicious API calls, we would need to avoid the usage of the more "obvious" APIs. D/Invoke provides Manual Mapping as a solution to bypass API hooking, but we won't be covering it in this post.
 
 ## D/Invoke
-[D/Invoke](https://github.com/TheWover/DInvoke) - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies to dynamically invoke unmanaged APIs:
+[D/Invoke](https://github.com/TheWover/DInvoke) - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies the ability to dynamically invoke unmanaged APIs:
 - Load a DLL into memory
 - Get a pointer to a function/API in that DLL
 - Call desired API using the pointer while passing in parameters
@@ -45,7 +46,7 @@ This is the standard usage of D/Invoke and will avoid directly importing the API
 
 To do this, D/Invoke works with [Delegates](https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/delegates/). I'm probably not the best at explaining Delegates since this is my first time doing development in C#, but in my understanding, `Delegates` allows wrapping functions within a class, API calls can now be declared as a class and be used later on. Here is an example of D/Invoke usage to call the `VirtualAllocEx` Win32API:
 
-Creating Delegate for `VirtualAllocEx`:
+Make a new class and create a Delegate for `VirtualAllocEx`:
 ```csharp
 	public class DELEGATES {
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -67,7 +68,7 @@ IntPtr allocret = virAllocEx(procInfo.hProcess, IntPtr.Zero, (uint)sheocode.Leng
 
 ## Project Injection 101
 Project Injection is a commonly used technique to inject our shellcode into legitimate target process's virtual memory space. A textbook way to perform project injection is:
-1. Find a target process to inject our shellcode into.
+1. Find a target process to inject our shellcode into and get a handle to it with `OpenProcess`
 2. Allocate a new memory region in the remote target process using `VirtualAllocEx`
 3. Write our shellcode into the allocated remote memory region using `WriteProcessMemory`
 4. Execute our shellcode as a new thread with `CreateRemoteThread`
@@ -255,7 +256,7 @@ resThrd(procInfo.hThread);
 ```
 
 Build our .NET assembly as a x64 executable.
-For the sake of the demo, we can cheat a bit. In order to load our assembly in the target's memory, let's gzip compress and then base64 encode the assembly's byte stream, output it to `compressedEncodedBytes.txt`.
+To load our assembly in the target's memory, let's gzip compress and then base64 encode the assembly's byte stream, output it to `compressedEncodedBytes.txt`.
 ```powershell
 $bytes = [System.IO.File]::ReadAllBytes("$(pwd)\injection.exe")
 [System.IO.MemoryStream] $outStream = New-Object System.IO.MemoryStream
