@@ -308,3 +308,4 @@ When the victim opens the maldoc and enables macro, WINWORD will load our PowerS
 ## Is this good enough?
 Well no, modern AV/EDR can still nuke our work immediately, this is mainly to demonstrate a common injection technique implemented with D/Invoke.
 In Part 2, we can make our `svchost.exe` malware even more benign by PPID Spoofing, making it appear as it got spawned by `services.exe`, which is normally the case. I'm also working on invoking system calls with D/Invoke instead of standard API calls to defeat API Hooking. Stay tuned!
+Full PoC is on my GitHub, feel free to fork :-)
